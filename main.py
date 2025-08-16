@@ -14,7 +14,7 @@ TOKEN = os.getenv("BOT_TOKEN")
 if not TOKEN:
     raise RuntimeError("Please set BOT_TOKEN as environment variable.")
 
-# HTML Template (Fixed formatting)
+# HTML Template (Updated formatting)
 HTML_TEMPLATE = """<!DOCTYPE html>
 <html lang="km">
 <head>
@@ -22,8 +22,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     <title>PDF Khmer by TENG SAMBATH</title>
     <style>
         @page {{
-            margin-left: 0.25in;
-            margin-right: 0.25in;
+            margin-left: 0.35in;
+            margin-right: 0.35in;
             margin-top: 0.4in;
             margin-bottom: 0.4in;
         }}
@@ -34,6 +34,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             color: #222;
             margin: 0;
             padding: 0;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+            word-break: keep-all;
         }}
         .content {{
             margin-bottom: 30px;
@@ -72,7 +75,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "✅ **Features:**\n"
         "• Auto convert text to PDF (no HTML, no browser)\n" 
         "• Perfect Khmer font shaping\n"
-        "• Margins: Left/Right 0.25\", Top/Bottom 0.4\"\n"
+        "• Margins: Left/Right 0.35\", Top/Bottom 0.4\"\n"
         "• Font: 19px Battambang/Noto Sans Khmer\n"
         "• Footer: ទំព័រ 1 | Created by TENG SAMBATH\n\n"
         "📝 **Usage:** Just send any text, get PDF back instantly!\n\n"
@@ -117,7 +120,7 @@ async def convert_text_to_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE
             document=pdf_buffer,
             filename=filename,
             caption="✅ **PDF បង្កើតជោគជ័យ!**\n\n"
-                   "📐 Margins: Left/Right 0.25\", Top/Bottom 0.4\"\n"
+                   "📐 Margins: Left/Right 0.35\", Top/Bottom 0.4\"\n"
                    "📝 Font: 19px Khmer fonts with perfect shaping\n"
                    "🎯 Ready to use - no conversion needed!\n\n"
                    "👨‍💻 **Created by: TENG SAMBATH**"
@@ -152,7 +155,7 @@ if __name__ == "__main__":
     try:
         logging.info("🚀 Starting PDF Khmer Bot by TENG SAMBATH...")
         logging.info("✅ WeasyPrint PDF generation ready")
-        logging.info("📐 Margins: Left/Right 0.25\", Top/Bottom 0.4\"")
+        logging.info("📐 Margins: Left/Right 0.35\", Top/Bottom 0.4\"")
         logging.info("📝 Font: 19px Khmer fonts")
         logging.info("🎯 Auto PDF conversion enabled")
         
