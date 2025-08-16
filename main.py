@@ -7,7 +7,7 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from datetime import datetime
 
-# ReportLab imports
+# ReportLab imports with complete error handling
 try:
     from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -15,11 +15,12 @@ try:
     from reportlab.lib.pagesizes import A4
     from reportlab.pdfbase import pdfmetrics
     from reportlab.pdfbase.ttfonts import TTFont
-    from reportlab.lib.units import inch
+    from reportlab.lib.units import inch  # ← Fixed import
     REPORTLAB_AVAILABLE = True
     logging.info("✅ ReportLab imported successfully")
 except ImportError as e:
     REPORTLAB_AVAILABLE = False
+    inch = 72  # Fallback: 1 inch = 72 points
     logging.error(f"❌ ReportLab not available: {e}")
 
 # Configure logging
@@ -33,20 +34,20 @@ TOKEN = os.getenv('BOT_TOKEN')
 WEBHOOK_URL = os.getenv('WEBHOOK_URL')
 PORT = int(os.getenv('PORT', 8000))
 
-class PDFOnlyBot:
+class FixedPDFBot:
     def __init__(self):
         self.font_size = 19
         self.footer_font_size = 10
         self.font_name = 'Helvetica'
         self.khmer_font_name = 'Helvetica'
-        # All margins set to 0.4 inches
-        self.margin_size = 0.4 * inch
+        # All margins set to 0.4 inches (using safe calculation)
+        self.margin_size = 0.4 * inch  # Now inch is always defined
         self.setup_fonts()
         
     def setup_fonts(self):
-        """Setup fonts with fallback system"""
+        """Setup fonts with complete error handling"""
         if not REPORTLAB_AVAILABLE:
-            logging.warning("ReportLab not available - using default fonts")
+            logging.warning("ReportLab not available - PDF generation disabled")
             return
             
         try:
@@ -54,8 +55,7 @@ class PDFOnlyBot:
             font_paths = [
                 'font/Battambang-Regular.ttf',
                 'font/KhmerOS.ttf',
-                'font/Noto-Sans-Khmer-Regular.ttf',
-                '/usr/share/fonts/truetype/khmer/KhmerOS.ttf'
+                'font/Noto-Sans-Khmer-Regular.ttf'
             ]
             
             for i, font_path in enumerate(font_paths):
@@ -132,7 +132,7 @@ class PDFOnlyBot:
     def create_pdf_document(self, text: str) -> BytesIO:
         """Create PDF document with 0.4\" margins and footer only"""
         if not REPORTLAB_AVAILABLE:
-            raise ImportError("ReportLab not available - cannot create PDF")
+            raise ImportError("ReportLab library not available")
             
         buffer = BytesIO()
         
@@ -207,63 +207,65 @@ class PDFOnlyBot:
         
         buffer.seek(0)
         return buffer
+    
+    def create_fallback_response(self, text: str) -> BytesIO:
+        """Create fallback response when ReportLab is not available"""
+        current_date = datetime.now().strftime("%d/%m/%Y %H:%M")
+        
+        fallback_content = f"""
+PDF Generation Failed - ReportLab Not Available
+
+Text Content:
+{text}
+
+Footer: ទំព័រ 1 | Created by TENG SAMBATH
+Generated: {current_date}
+
+Please install ReportLab library for PDF generation.
+"""
+        
+        buffer = BytesIO()
+        buffer.write(fallback_content.encode('utf-8'))
+        buffer.seek(0)
+        return buffer
 
 # Initialize bot
-pdf_bot = PDFOnlyBot()
+pdf_bot = FixedPDFBot()
 
 # Create bot application
 ptb = Application.builder().updater(None).token(TOKEN).read_timeout(10).get_updates_read_timeout(42).build()
 
 # Bot command handlers
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not REPORTLAB_AVAILABLE:
-        await update.message.reply_text("❌ ReportLab library not available. PDF generation disabled.")
-        return
-        
-    welcome_message = f"""🇰🇭 ជំរាបសួរ! PDF Bot (Final Version)
+    status = "✅ Available" if REPORTLAB_AVAILABLE else "❌ Not Available"
+    
+    welcome_message = f"""🇰🇭 ជំរាបសួរ! Fixed PDF Bot
 
-🎯 **កំណត់ត្រាថ្មី:**
-• Margins: 0.4" ទាំង 4 ប្រការ (Top, Bottom, Left, Right)
-• Header: ដកចេញហើយ
-• Footer: "ទំព័រ 1 | Created by TENG SAMBATH"
+🔧 **System Status:**
+• ReportLab: {status}
+• PDF Generation: {'Enabled' if REPORTLAB_AVAILABLE else 'Disabled'}
 • Font Size: {pdf_bot.font_size}px
 
-🔧 **Status:**
-• PDF Generation: ✅ Ready
-• Khmer Font: {pdf_bot.khmer_font_name}
-• Layout: Clean & Professional
+🎯 **Layout Configuration:**
+• Margins: 0.4\" all sides
+• Header: Removed
+• Footer: "ទំព័រ 1 | Created by TENG SAMBATH"
 
-📝 **របៀបប្រើប្រាស់:**
-ផ្ញើអត្ថបទខ្មែរមកខ្ញុំ ទទួលបាន PDF ជាមួយ layout ថ្មី!
+{'📝 ផ្ញើអត្ថបទមកខ្ញុំ!' if REPORTLAB_AVAILABLE else '⚠️ ReportLab library required for PDF generation'}
 
-👨‍💻 **Final Version by: TENG SAMBATH**"""
+👨‍💻 **Fixed by: TENG SAMBATH**"""
     
     await update.message.reply_text(welcome_message)
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not REPORTLAB_AVAILABLE:
-        await update.message.reply_text("❌ ReportLab not available. Cannot generate PDF.")
-        return
-        
-    help_text = f"""🆘 **ជំនួយ PDF Bot:**
+    help_text = f"""🆘 **ជំនួយ Fixed PDF Bot:**
 
-🎯 **Layout Specifications:**
-• All Margins: 0.4 inches
-• Header: Removed completely
-• Footer: "ទំព័រ 1 | Created by TENG SAMBATH"
-• Font Size: {pdf_bot.font_size}px
-• Alignment: Left
+🔧 **System Status:**
+• ReportLab: {'Available' if REPORTLAB_AVAILABLE else 'Not Available'}
+• inch variable: {'Defined' if 'inch' in globals() else 'Not defined'}
+• Margins: 0.4\" (calculated as {pdf_bot.margin_size} points)
 
-📝 **Usage:**
-1️⃣ Send Khmer or English text
-2️⃣ Receive PDF with 0.4" margins
-3️⃣ Download and use
-
-💡 **Features:**
-- Professional PDF layout
-- Clean Khmer text rendering
-- Proper paragraph formatting
-- Consistent spacing
+{'📝 **Usage:** Send text to generate PDF' if REPORTLAB_AVAILABLE else '⚠️ **Issue:** ReportLab library not installed'}
 
 👨‍💻 **TENG SAMBATH**"""
     
@@ -275,11 +277,6 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
     if user_text.startswith('/'):
         return
     
-    # Check if ReportLab is available
-    if not REPORTLAB_AVAILABLE:
-        await update.message.reply_text("❌ ReportLab library not installed. Cannot create PDF.")
-        return
-    
     # Validate input
     if len(user_text.strip()) < 3:
         await update.message.reply_text("⚠️ សូមផ្ញើអត្ថបទយ៉ាងហោចណាស់ 3 តួអក្សរ")
@@ -287,40 +284,48 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
     
     try:
         # Send processing message
-        processing_msg = await update.message.reply_text(
-            f"⏳ **កំពុងបង្កើត PDF ជាមួយ margins 0.4\"...**\n"
-            f"📐 Layout: No Header + Footer Only\n"
-            f"📝 Font: {pdf_bot.font_size}px\n"
-            f"⚙️ Engine: ReportLab PDF\n"
-            f"✨ Processing..."
-        )
-        
-        # Create PDF
-        pdf_buffer = pdf_bot.create_pdf_document(user_text)
+        if REPORTLAB_AVAILABLE:
+            processing_msg = await update.message.reply_text(
+                f"⏳ **កំពុងបង្កើត PDF ជាមួយ margins 0.4\"...**\n"
+                f"📐 Layout: No Header + Footer Only\n"
+                f"📝 Font: {pdf_bot.font_size}px\n"
+                f"⚙️ Engine: ReportLab PDF\n"
+                f"✨ Processing..."
+            )
+            
+            # Create PDF
+            pdf_buffer = pdf_bot.create_pdf_document(user_text)
+            file_ext = "pdf"
+            
+        else:
+            processing_msg = await update.message.reply_text(
+                "⚠️ **ReportLab not available - creating fallback response...**"
+            )
+            
+            # Create fallback
+            pdf_buffer = pdf_bot.create_fallback_response(user_text)
+            file_ext = "txt"
         
         # Generate filename
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"SAMBATH_PDF_{timestamp}.pdf"
+        filename = f"SAMBATH_{'PDF' if REPORTLAB_AVAILABLE else 'FALLBACK'}_{timestamp}.{file_ext}"
         
-        # Send PDF document
+        # Send document
         await context.bot.send_document(
             chat_id=update.effective_chat.id,
             document=pdf_buffer,
             filename=filename,
-            caption=f"""✅ **បង្កើត PDF ជោគជ័យ!** 🇰🇭
+            caption=f"""{'✅ បង្កើត PDF ជោគជ័យ!' if REPORTLAB_AVAILABLE else '⚠️ ReportLab not available'} 🇰🇭
 
-🎯 **Layout ថ្មី:**
-• Margins: 0.4" ទាំង 4 ប្រការ ✅
-• Header: ដកចេញ ✅
-• Footer: "ទំព័រ 1 | Created by TENG SAMBATH" ✅
-• Font Size: {pdf_bot.font_size}px ✅
+{'🎯 **PDF Features:**' if REPORTLAB_AVAILABLE else '🔧 **System Issue:**'}
+{'• Margins: 0.4\" ទាំង 4 ប្រការ ✅' if REPORTLAB_AVAILABLE else '• ReportLab library missing'}
+{'• Header: ដកចេញ ✅' if REPORTLAB_AVAILABLE else '• Cannot generate PDF'}
+{'• Footer: "ទំព័រ 1 | Created by TENG SAMBATH" ✅' if REPORTLAB_AVAILABLE else '• Fallback text file created'}
+{'• Font Size: 19px ✅' if REPORTLAB_AVAILABLE else ''}
 
-📊 **ព័ត៌មានឯកសារ:**
-• File Type: PDF
-• Layout: Clean & Professional
+📊 **ព័ត៌មាន:**
 • Generated: {datetime.now().strftime('%d/%m/%Y %H:%M')}
-
-📄 **ទាញយក PDF ផ្ទាល់បាន!**
+• Engine: {'ReportLab PDF' if REPORTLAB_AVAILABLE else 'Text Fallback'}
 
 👨‍💻 **Created by: TENG SAMBATH**"""
         )
@@ -329,14 +334,13 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         await processing_msg.delete()
         
         # Log success
-        logging.info(f"Successfully created PDF for user {update.effective_user.id}")
+        logging.info(f"Successfully created {'PDF' if REPORTLAB_AVAILABLE else 'fallback'} for user {update.effective_user.id}")
         
     except Exception as e:
-        logging.error(f"Error creating PDF: {str(e)}")
+        logging.error(f"Error processing text: {str(e)}")
         await update.message.reply_text(
             f"❌ **មានបញ្ហាកើតឡើង:** {str(e)}\n\n"
             f"🔄 សូមព្យាយាមម្ដងទៀត\n"
-            f"💡 ឬផ្ញើអត្ថបទខ្លីជាមុន\n"
             f"👨‍💻 Support: TENG SAMBATH"
         )
 
@@ -357,7 +361,7 @@ async def lifespan(app: FastAPI):
         # Start bot
         async with ptb:
             await ptb.start()
-            logging.info("✅ PDF Bot started successfully")
+            logging.info("✅ Fixed PDF Bot started successfully")
             yield
             
     except Exception as e:
@@ -372,9 +376,9 @@ async def lifespan(app: FastAPI):
 
 # Create FastAPI application
 app = FastAPI(
-    title="PDF Only Bot by TENG SAMBATH",
-    description="PDF generation with 0.4\" margins, no header, footer only",
-    version="PDF ONLY 1.0",
+    title="Fixed PDF Bot by TENG SAMBATH",
+    description="PDF generation with proper error handling and fallback support",
+    version="FIXED 1.0",
     lifespan=lifespan
 )
 
@@ -395,35 +399,33 @@ async def process_update(request: Request):
 async def health_check():
     return {
         "status": "healthy",
-        "message": "PDF Only Bot running! 🤖",
-        "version": "PDF ONLY 1.0",
+        "message": "Fixed PDF Bot running! 🤖",
+        "version": "FIXED 1.0",
         "developer": "TENG SAMBATH",
-        "specifications": {
-            "margins": "0.4 inches all sides",
-            "header": "Removed",
-            "footer": "ទំព័រ 1 | Created by TENG SAMBATH",
-            "font_size": f"{pdf_bot.font_size}px",
-            "pdf_only": True,
-            "html_fallback": False
-        },
-        "reportlab_available": REPORTLAB_AVAILABLE
+        "system_status": {
+            "reportlab_available": REPORTLAB_AVAILABLE,
+            "inch_defined": True,  # Now always defined
+            "margin_size_points": pdf_bot.margin_size,
+            "pdf_generation": "enabled" if REPORTLAB_AVAILABLE else "disabled",
+            "fallback_mode": "available" if not REPORTLAB_AVAILABLE else "not needed"
+        }
     }
 
 # Root endpoint
 @app.get("/")
 async def root():
     return {
-        "message": "🇰🇭 PDF Only Bot by TENG SAMBATH",
-        "version": "PDF ONLY 1.0",
+        "message": "🇰🇭 Fixed PDF Bot by TENG SAMBATH",
+        "version": "FIXED 1.0",
         "developer": "TENG SAMBATH",
-        "features": {
-            "margins": "0.4\" all sides (Top, Bottom, Left, Right)",
-            "header": "Removed completely",
-            "footer": "ទំព័រ 1 | Created by TENG SAMBATH",
-            "font_size": f"{pdf_bot.font_size}px",
-            "mode": "PDF generation only"
-        },
-        "status": "Ready for production"
+        "fixes_applied": [
+            "Fixed inch variable import issue",
+            "Added ReportLab availability check",
+            "Implemented fallback for missing ReportLab",
+            "Proper error handling throughout",
+            "Safe margin calculation"
+        ],
+        "status": "Production ready with error handling"
     }
 
 # Application entry point
@@ -431,13 +433,11 @@ if __name__ == "__main__":
     import uvicorn
     
     # Startup logging
-    logging.info("🚀 Starting PDF Only Bot by TENG SAMBATH...")
-    logging.info(f"📐 Margins: 0.4\" on all sides")
-    logging.info("🚫 Header: Removed")
-    logging.info("✅ Footer: ទំព័រ 1 | Created by TENG SAMBATH")
-    logging.info(f"📏 Font Size: {pdf_bot.font_size}px")
+    logging.info("🚀 Starting Fixed PDF Bot by TENG SAMBATH...")
     logging.info(f"🔧 ReportLab: {'Available' if REPORTLAB_AVAILABLE else 'Not Available'}")
-    logging.info("📄 Mode: PDF Generation Only")
+    logging.info(f"📐 inch variable: {inch} points")
+    logging.info(f"📏 Margins: 0.4\" = {pdf_bot.margin_size} points")
+    logging.info("✅ All imports handled safely")
     
     # Run the application
     uvicorn.run(
