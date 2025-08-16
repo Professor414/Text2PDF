@@ -5,97 +5,81 @@ from datetime import datetime
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
-try:
-    from fpdf import FPDF
-except ImportError as e:
-    raise RuntimeError("You must add 'fpdf2' to requirements.txt!")
-
 logging.basicConfig(level=logging.INFO)
 TOKEN = os.getenv("BOT_TOKEN")
 if not TOKEN:
-    raise RuntimeError("Please set BOT_TOKEN as env var.")
+    raise RuntimeError("Please set BOT_TOKEN as environment variable.")
 
-# ==== Direct PDF Handler ====
-class KhmerPDF(FPDF):
-    def __init__(self, margin_left=6.35, margin_right=6.35, margin_top=10.16, margin_bottom=10.16):
-        super().__init__('P', 'mm', 'A4')
-        self.set_auto_page_break(auto=True, margin=margin_bottom)
-        self.set_margin(margin_left)
-        self.set_left_margin(margin_left)
-        self.set_right_margin(margin_right)
-        self.set_top_margin(margin_top)
-        self.font_size_main = 19
-        self.font_size_footer = 10
-  
-    def header(self):
-        # No header
-        pass
+FONT_PATH = "font/Battambang-Regular.ttf"  # Or the path where you upload Khmer font
 
-    def footer(self):
-        self.set_y(-15)
-        self.set_font("Arial", "", self.font_size_footer)
-        self.cell(0, 10, "ទំព័រ 1 | Created by TENG SAMBATH", 0, 0, "L")
+class KhmerPDF:
+    def __init__(self):
+        from fpdf import FPDF
+        self.FPDF = FPDF
+        self.left_margin = self.right_margin = 6.35     # 0.25in = 6.35mm
+        self.top_margin = self.bottom_margin = 10.16    # 0.4in = 10.16mm
+        self.font_size = 19
+        self.footer_font_size = 10
+        self.font_name = "Battambang"
 
-def build_pdf(text):
-    margin_left = 6.35   # 0.25in in mm
-    margin_right = 6.35
-    margin_top = 10.16   # 0.4in in mm
-    margin_bottom = 10.16
+    def make_pdf(self, text):
+        pdf = self.FPDF()
+        pdf.add_page()
+        # Add Battambang Unicode font
+        pdf.add_font(self.font_name, '', FONT_PATH, uni=True)
+        pdf.set_font(self.font_name, '', self.font_size)
+        pdf.set_left_margin(self.left_margin)
+        pdf.set_right_margin(self.right_margin)
+        pdf.set_top_margin(self.top_margin)
+        pdf.set_auto_page_break(True, margin=self.bottom_margin)
+        lines = text.replace('\r\n', '\n').split('\n')
+        for idx, line in enumerate(lines):
+            pdf.multi_cell(0, 10, line, align='L')
+        # Footer
+        pdf.set_y(-15)
+        pdf.set_font(self.font_name, '', self.footer_font_size)
+        pdf.cell(0, 10, 'ទំព័រ 1 | Created by TENG SAMBATH', 0, 0, 'L')
+        buffer = BytesIO()
+        pdf.output(buffer)
+        buffer.seek(0)
+        return buffer
 
-    # New KhmerPDF object
-    pdf = KhmerPDF(margin_left, margin_right, margin_top, margin_bottom)
-    pdf.add_page()
-    pdf.add_font('DejaVu', '', '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf', uni=True)
-    pdf.set_font("DejaVu", size=19)
-    # Clean and split
-    lines = [line.strip() for line in text.replace('\r\n', '\n').split('\n') if line.strip()]
-    for idx, line in enumerate(lines):
-        if idx > 0:
-            pdf.ln(3)
-        pdf.multi_cell(0, 10, line, align='L')
-    # Output to buffer
-    buffer = BytesIO()
-    pdf.output(buffer)
-    buffer.seek(0)
-    return buffer
+pdf_gen = KhmerPDF()
 
-# ==== BOT SECTION ====
 app = Application.builder().token(TOKEN).build()
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "🇰🇭 PDF Bot (NO HTML, NO ReportLab)\n\n"
-        "• Output: PDF file only, no HTML, no browser convert\n"
-        "• Margins LEFT & RIGHT: 0.25 in\n"
-        "• Font: DejaVu 19px; Khmer supported (if on server)\n"
-        "• Header: (none)\n"
-        "• Footer: 'ទំព័រ 1 | Created by TENG SAMBATH'\n\n"
-        "មានបញ្ហាអាចសួរបាន!"
+        "PDF Khmer Bot (no HTML, no browser convert)\n\n"
+        "• OUTPUT: PDF true Khmer\n"
+        "• Margins LEFT & RIGHT: 0.25in (6.35mm)\n"
+        "• Font: Battambang 19px (.ttf) - Unicode OK\n"
+        "• Footer: 'ទំព័រ 1 | Created by TENG SAMBATH'\n"
+        "• Send Khmer text to get true PDF!"
     )
 
 async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_text = update.message.text.strip()
-    if user_text.startswith("/"):
+    text = update.message.text.strip()
+    if text.startswith('/'):
         return
-    if len(user_text) < 3:
-        await update.message.reply_text("សូមផ្ញើអត្ថបទយ៉ាងហោចណាស់ 3 ទៅទីនេះ")
+    if len(text) < 3:
+        await update.message.reply_text("សូមផ្ញើអត្ថបទយ៉ាងហោចណាស់ 3 តួអក្សរ")
         return
-    await update.message.reply_text("⏳ កំពុងបង្កើត PDF...")
     try:
-        pdf_buffer = build_pdf(user_text)
+        pdf_buffer = pdf_gen.make_pdf(text)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"SAMBATH_DIRECT_{timestamp}.pdf"
+        filename = f"SAMBATH_PDF_{timestamp}.pdf"
         await context.bot.send_document(
             chat_id=update.effective_chat.id,
             document=pdf_buffer,
             filename=filename,
-            caption="✅ PDF file ពិតប្រាកដ (NO HTML, no browser convert, margin left/right 0.25in)!"
+            caption="✅ PDF Khmer Unicode (margins 0.25in) created 🚀"
         )
-    except Exception as err:
-        await update.message.reply_text("❌ PDF error: " + str(err))
+    except Exception as e:
+        await update.message.reply_text(f"❌ PDF កំហុស: {e}")
 
 app.add_handler(CommandHandler("start", start))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle))
 
 if __name__ == "__main__":
-    app.run_polling(stop_signals=None)
+    app.run_polling()
