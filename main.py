@@ -8,7 +8,7 @@ from fastapi import FastAPI
 import asyncio
 import threading
 
-# ReportLab imports for direct PDF generation
+# ReportLab imports with complete error handling
 try:
     from reportlab.pdfgen import canvas
     from reportlab.lib.pagesizes import A4
@@ -16,9 +16,10 @@ try:
     from reportlab.pdfbase.ttfonts import TTFont
     from reportlab.lib.units import inch
     REPORTLAB_AVAILABLE = True
-    logging.info("✅ ReportLab available - Direct PDF generation enabled!")
+    logging.info("✅ ReportLab imported successfully")
 except ImportError as e:
     REPORTLAB_AVAILABLE = False
+    inch = 72  # 1 inch = 72 points (fallback)
     logging.error(f"❌ ReportLab not available: {e}")
 
 # Configure logging
@@ -33,17 +34,24 @@ if not TOKEN:
     logger.error("BOT_TOKEN environment variable required!")
     exit(1)
 
-class DirectPDFBot:
+class PDFBotWithCustomMargins:
     def __init__(self):
-        self.font_size = 20
+        self.font_size = 19
         self.footer_font_size = 10
-        self.margin = 0.25 * inch  # 0.25 inches = 28.8 points
+        
+        # Custom margins as requested
+        self.left_margin = 0.25 * inch    # 0.25 inches left
+        self.right_margin = 0.25 * inch   # 0.25 inches right
+        self.top_margin = 0.4 * inch      # 0.4 inches top
+        self.bottom_margin = 0.4 * inch   # 0.4 inches bottom
+        
         self.line_height = self.font_size + 8  # 27 points
         self.setup_fonts()
         
     def setup_fonts(self):
-        """Setup Khmer fonts if available"""
+        """Setup fonts with error handling"""
         if not REPORTLAB_AVAILABLE:
+            self.khmer_font = 'Helvetica'
             return
             
         try:
@@ -66,7 +74,7 @@ class DirectPDFBot:
                     logger.warning(f"Failed to load {font_path}: {e}")
                     continue
                     
-            # Use default font if no Khmer fonts available
+            # Use default font
             self.khmer_font = 'Helvetica'
             logger.info("Using Helvetica as fallback font")
             
@@ -75,8 +83,7 @@ class DirectPDFBot:
             self.khmer_font = 'Helvetica'
     
     def clean_text(self, text):
-        """Clean and prepare text"""
-        # Remove problematic characters
+        """Clean text for better display"""
         problematic_chars = {
             '\u200B': '',  # Zero width space
             '\u200C': '',  # Zero width non-joiner
@@ -87,7 +94,7 @@ class DirectPDFBot:
         cleaned = text
         for old, new in problematic_chars.items():
             cleaned = cleaned.replace(old, new)
-        
+            
         return ' '.join(cleaned.split())
     
     def split_into_lines(self, text, canvas_obj, max_width):
@@ -105,7 +112,6 @@ class DirectPDFBot:
             if not para.strip():
                 continue
                 
-            # For each paragraph, split into words and create lines
             words = para.strip().split()
             if not words:
                 continue
@@ -116,71 +122,67 @@ class DirectPDFBot:
             for word in words:
                 test_line = current_line + (" " if current_line else "") + word
                 
-                # Check if test_line fits within max_width
+                # Check text width
                 text_width = canvas_obj.stringWidth(test_line, self.khmer_font, self.font_size)
                 
                 if text_width <= max_width:
                     current_line = test_line
                 else:
-                    # Current line is full, start new line
                     if current_line:
                         para_lines.append(current_line)
                     current_line = word
             
-            # Add last line
             if current_line:
                 para_lines.append(current_line)
             
-            # Add paragraph lines to all_lines
             all_lines.extend(para_lines)
-            # Add empty line between paragraphs (except for last paragraph)
+            
+            # Add empty line between paragraphs
             if para != paragraphs[-1]:
                 all_lines.append("")
         
         return all_lines
     
-    def create_direct_pdf(self, text):
-        """Create direct PDF using ReportLab canvas"""
+    def create_pdf_with_custom_margins(self, text):
+        """Create PDF with custom margins: Left=0.25\", Right=0.25\""""
         if not REPORTLAB_AVAILABLE:
             raise ImportError("ReportLab not available - cannot create PDF")
         
         buffer = BytesIO()
-        
-        # Create canvas with A4 page size
         c = canvas.Canvas(buffer, pagesize=A4)
         
         # Page dimensions
         page_width, page_height = A4
         
-        # Calculate content area
-        content_width = page_width - (2 * self.margin)  # 0.4" margins on both sides
-        content_height = page_height - (2 * self.margin)  # 0.4" margins top and bottom
+        # Calculate content area using custom margins
+        content_width = page_width - (self.left_margin + self.right_margin)
+        content_height = page_height - (self.top_margin + self.bottom_margin)
         
-        # Starting position (top-left of content area)
-        start_x = self.margin
-        start_y = page_height - self.margin
+        # Starting position (using left and top margins)
+        start_x = self.left_margin
+        start_y = page_height - self.top_margin
         
         # Set font
         c.setFont(self.khmer_font, self.font_size)
         
-        # Split text into lines that fit within content width
+        # Split text into lines
         lines = self.split_into_lines(text, c, content_width)
         
         # Draw text lines
         current_y = start_y
         
-        for i, line in enumerate(lines):
+        for line in lines:
             if not line.strip():  # Empty line (paragraph break)
-                current_y -= self.line_height * 0.5  # Half line spacing for paragraph break
+                current_y -= self.line_height * 0.5
                 continue
             
             # Check if we need a new page
-            if current_y - self.line_height < self.margin + 30:  # Leave space for footer
-                c.showPage()  # New page
-                c.setFont(self.khmer_font, self.font_size)  # Reset font after new page
+            if current_y - self.line_height < self.bottom_margin + 30:
+                c.showPage()
+                c.setFont(self.khmer_font, self.font_size)
                 current_y = start_y
             
-            # Draw the text line (left aligned)
+            # Draw the text line (left aligned at left_margin)
             c.drawString(start_x, current_y, line)
             current_y -= self.line_height
         
@@ -188,9 +190,9 @@ class DirectPDFBot:
         footer_text = "ទំព័រ 1 | Created by TENG SAMBATH"
         c.setFont("Helvetica", self.footer_font_size)
         
-        # Position footer at bottom of page
-        footer_y = self.margin * 0.5  # Half margin from bottom
-        c.drawString(start_x, footer_y, footer_text)
+        # Position footer at bottom (using left margin)
+        footer_y = self.bottom_margin * 0.5
+        c.drawString(self.left_margin, footer_y, footer_text)
         
         # Save the PDF
         c.showPage()
@@ -200,179 +202,227 @@ class DirectPDFBot:
         return buffer
 
 # Initialize bot
-pdf_bot = DirectPDFBot()
+pdf_bot = PDFBotWithCustomMargins()
 
-# Create Telegram application (POLLING MODE)
+# Create Telegram application
 app = Application.builder().token(TOKEN).build()
 
+# Bot command handlers
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     status = "✅ Available" if REPORTLAB_AVAILABLE else "❌ Not Available"
     
-    await update.message.reply_text(
-        f"""🇰🇭 ជំរាបសួរ! Direct PDF Bot
+    # Calculate margin values for display
+    left_inches = pdf_bot.left_margin / inch
+    right_inches = pdf_bot.right_margin / inch
+    
+    welcome_message = f"""🇰🇭 ជំរាបសួរ! Custom Margins PDF Bot
 
-🎯 **Direct PDF Generation:**
+🎯 **Custom Margin Settings:**
+• Left Margin: {left_inches:.2f} inches
+• Right Margin: {right_inches:.2f} inches  
+• Top Margin: 0.4 inches
+• Bottom Margin: 0.4 inches
+
+🔧 **System Status:**
 • ReportLab: {status}
-• Output: PDF files ពិតប្រាកដ (មិនមែន HTML)
 • Font Size: {pdf_bot.font_size}px
-• Margins: 0.4" ទាំង 4 ប្រការ
+• Output: PDF files ពិតប្រាកដ
 
-✨ **PDF Features:**
-• No Header (ដកចេញ)
+✨ **Features:**
+• No Header (removed)
 • Footer: "ទំព័រ 1 | Created by TENG SAMBATH"
-• Left alignment (stable)
+• Left alignment
 • Auto line wrapping
-• Paragraph spacing
+• Professional layout
 
-📝 **របៀបប្រើប្រាស់:**
-1. ផ្ញើអត្ថបទខ្មែរមកខ្ញុំ
-2. ទទួលបាន PDF file ពិតប្រាកដ
-3. ទាញយកហើយប្រើបាន!
+📝 **Usage:** 
+ផ្ញើអត្ថបទខ្មែរមកខ្ញុំ ទទួលបាន PDF ជាមួយ margins ត្រឹមត្រូវ!
 
-🎊 **Direct PDF - No HTML conversion needed!**
-
-👨‍💻 **Direct Solution by: TENG SAMBATH**"""
-    )
+👨‍💻 **Custom Margins by: TENG SAMBATH**"""
+    
+    await update.message.reply_text(welcome_message)
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        f"""🆘 **Direct PDF Bot Help:**
+    left_inches = pdf_bot.left_margin / inch
+    right_inches = pdf_bot.right_margin / inch
+    
+    help_text = f"""🆘 **Custom Margins PDF Bot Help:**
 
-✅ **What's Different:**
-• Creates actual PDF files (not HTML)
-• Direct ReportLab PDF generation
-• No browser conversion needed
-• Professional PDF output
+📐 **Margin Specifications:**
+• Left: {left_inches:.2f}" (as requested)
+• Right: {right_inches:.2f}" (as requested)
+• Top: 0.4"
+• Bottom: 0.4"
 
-🎯 **PDF Specifications:**
-• Margins: 0.4 inches ទាំង 4 ប្រការ
-• Font: {pdf_bot.font_size}px
-• Header: None (removed)
+🎯 **PDF Features:**
+• Font Size: {pdf_bot.font_size}px
+• Alignment: Left
+• Header: None
 • Footer: "ទំព័រ 1 | Created by TENG SAMBATH"
-• Alignment: Left (clean & stable)
-
-📝 **Features:**
 • Auto text wrapping
-• Paragraph spacing
 • Multi-page support
-• Professional layout
-• Direct download
 
-👨‍💻 **TENG SAMBATH - Direct PDF Solution**"""
-    )
+📝 **How to Use:**
+1️⃣ Send Khmer text to me
+2️⃣ Get PDF with custom margins
+3️⃣ Download and use!
 
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message.text.startswith('/'):
+👨‍💻 **TENG SAMBATH - Custom Margins Solution**"""
+    
+    await update.message.reply_text(help_text)
+
+async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_text = update.message.text
+    
+    if user_text.startswith('/'):
         return
         
+    # Check ReportLab availability
     if not REPORTLAB_AVAILABLE:
-        await update.message.reply_text("❌ ReportLab not available. Cannot create PDF.")
+        await update.message.reply_text("❌ ReportLab library not available. Cannot create PDF.")
         return
         
-    text = update.message.text.strip()
-    if len(text) < 3:
+    # Validate input
+    if len(user_text.strip()) < 3:
         await update.message.reply_text("⚠️ សូមផ្ញើអត្ថបទយ៉ាងហោចណាស់ 3 តួអក្សរ")
         return
     
     try:
-        processing = await update.message.reply_text(
-            f"""⏳ **បង្កើត PDF ពិតប្រាកដ...**
+        # Send processing message
+        left_inches = pdf_bot.left_margin / inch
+        right_inches = pdf_bot.right_margin / inch
+        
+        processing_msg = await update.message.reply_text(
+            f"""⏳ **កំពុងបង្កើត PDF ជាមួយ Custom Margins...**
 
-✅ Engine: ReportLab Direct PDF
-📐 Margins: 0.4" all sides
+📐 Left: {left_inches:.2f}" | Right: {right_inches:.2f}"
 📝 Font: {pdf_bot.font_size}px
-📄 Output: PDF file (not HTML)
-🎯 Processing your text..."""
+⚙️ Engine: ReportLab Direct PDF
+✨ Processing your text..."""
         )
         
-        pdf_buffer = pdf_bot.create_direct_pdf(text)
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"SAMBATH_PDF_{timestamp}.pdf"
+        # Create PDF
+        pdf_buffer = pdf_bot.create_pdf_with_custom_margins(user_text)
         
+        # Generate filename
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"SAMBATH_MARGINS_{timestamp}.pdf"
+        
+        # Send PDF document
         await context.bot.send_document(
             chat_id=update.effective_chat.id,
             document=pdf_buffer,
             filename=filename,
-            caption=f"""✅ **Direct PDF ជោគជ័យ!** 🇰🇭
+            caption=f"""✅ **PDF ជាមួយ Custom Margins ជោគជ័យ!** 🇰🇭
 
-🎯 **PDF ពិតប្រាកដ - Ready to use!**
+📐 **Custom Margins Applied:**
+• Left Margin: {left_inches:.2f} inches ✅
+• Right Margin: {right_inches:.2f} inches ✅
+• Top Margin: 0.4 inches ✅
+• Bottom Margin: 0.4 inches ✅
 
 📋 **PDF Features:**
-• File Type: PDF (not HTML) ✅
-• Margins: 0.4" ទាំង 4 ប្រការ ✅
 • Font Size: {pdf_bot.font_size}px ✅
 • Header: Removed ✅
 • Footer: "ទំព័រ 1 | Created by TENG SAMBATH" ✅
-• Alignment: Left ✅
+• Left Alignment: Clean & Stable ✅
 
-📊 **Technical:**
+📊 **Technical Info:**
 • Generated: {datetime.now().strftime('%d/%m/%Y %H:%M')}
 • Engine: ReportLab Direct PDF
-• Auto line wrapping: Enabled
-• Multi-page support: Available
+• File Type: PDF (not HTML)
 
-📄 **Direct PDF Download - No conversion needed!**
-
-👨‍💻 **Direct PDF by: TENG SAMBATH**"""
+👨‍💻 **Custom Margins by: TENG SAMBATH**"""
         )
         
-        await processing.delete()
-        logger.info(f"Direct PDF created for user {update.effective_user.id}")
+        # Delete processing message
+        await processing_msg.delete()
+        
+        # Log success
+        logger.info(f"PDF with custom margins created for user {update.effective_user.id}")
         
     except Exception as e:
-        logger.error(f"PDF Error: {e}")
-        await update.message.reply_text(f"❌ Error creating PDF: {str(e)}")
+        logger.error(f"Error creating PDF: {str(e)}")
+        await update.message.reply_text(f"❌ មានបញ្ហាកើតឡើង: {str(e)}")
 
-# Add handlers
+# Add handlers to bot
 app.add_handler(CommandHandler("start", start_command))
 app.add_handler(CommandHandler("help", help_command))
-app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_message))
 
-# FastAPI for health check
-fastapi_app = FastAPI(title="Direct PDF Bot by TENG SAMBATH")
+# FastAPI for health check and webhook
+fastapi_app = FastAPI(title="Custom Margins PDF Bot by TENG SAMBATH")
 
 @fastapi_app.get("/")
 async def root():
     return {
-        "status": "direct_pdf",
-        "message": "Direct PDF Bot - No HTML conversion needed!",
-        "output": "PDF files (not HTML)",
-        "developer": "TENG SAMBATH",
-        "reportlab": REPORTLAB_AVAILABLE
-    }
-
-@fastapi_app.get("/health")
-async def health():
-    return {
-        "status": "healthy",
-        "pdf_generation": "direct",
-        "output_format": "PDF",
-        "html_conversion": False,
+        "message": "🇰🇭 Custom Margins PDF Bot by TENG SAMBATH",
+        "status": "running",
+        "margins": {
+            "left": f"{pdf_bot.left_margin/inch:.2f} inches",
+            "right": f"{pdf_bot.right_margin/inch:.2f} inches",
+            "top": f"{pdf_bot.top_margin/inch:.2f} inches", 
+            "bottom": f"{pdf_bot.bottom_margin/inch:.2f} inches"
+        },
         "reportlab_available": REPORTLAB_AVAILABLE
     }
 
+@fastapi_app.get("/health")
+async def health_check():
+    return {
+        "status": "healthy",
+        "pdf_generation": "enabled" if REPORTLAB_AVAILABLE else "disabled",
+        "custom_margins": True,
+        "left_margin": f"{pdf_bot.left_margin/inch:.2f} inches",
+        "right_margin": f"{pdf_bot.right_margin/inch:.2f} inches"
+    }
+
+# Webhook endpoint
+@fastapi_app.post("/webhook")
+async def process_webhook(request):
+    try:
+        req = await request.json()
+        update = Update.de_json(req, app.bot)
+        await app.update_queue.put(update)
+        return {"status": "ok"}
+    except Exception as e:
+        logger.error(f"Webhook error: {e}")
+        return {"status": "error"}
+
 # Function to run bot
 async def run_bot():
+    """Run the bot with proper error handling"""
     try:
-        logger.info("🚀 Starting Direct PDF Bot")
-        logger.info("📄 Output: PDF files (not HTML)")
+        logger.info("🚀 Starting Custom Margins PDF Bot by TENG SAMBATH...")
+        logger.info(f"📐 Left Margin: {pdf_bot.left_margin/inch:.2f} inches")
+        logger.info(f"📐 Right Margin: {pdf_bot.right_margin/inch:.2f} inches")
         logger.info(f"✅ ReportLab: {'Available' if REPORTLAB_AVAILABLE else 'Not Available'}")
-        logger.info(f"📏 Font: {pdf_bot.font_size}px")
-        logger.info("📐 Margins: 0.4 inches all sides")
-        logger.info("🎯 Direct PDF generation enabled!")
+        logger.info(f"📝 Font: {pdf_bot.font_size}px")
+        logger.info("🎯 Custom margins PDF generation ready!")
         
-        async with app:
-            await app.initialize()
-            await app.start()
-            await app.updater.start_polling()
-            
-            while True:
-                await asyncio.sleep(1)
+        # Check for webhook URL
+        webhook_url = os.getenv('WEBHOOK_URL')
+        if webhook_url:
+            # Webhook mode
+            logger.info("Using WEBHOOK mode")
+            await app.bot.set_webhook(webhook_url + "/webhook")
+        else:
+            # Polling mode
+            logger.info("Using POLLING mode")
+            async with app:
+                await app.initialize()
+                await app.start()
+                await app.updater.start_polling()
+                
+                # Keep running
+                while True:
+                    await asyncio.sleep(1)
                 
     except Exception as e:
         logger.error(f"Bot error: {e}")
 
 def start_bot_thread():
+    """Start bot in separate thread"""
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     loop.run_until_complete(run_bot())
@@ -380,9 +430,10 @@ def start_bot_thread():
 if __name__ == "__main__":
     import uvicorn
     
-    # Start bot in background thread
-    bot_thread = threading.Thread(target=start_bot_thread, daemon=True)
-    bot_thread.start()
+    # Start bot in background thread for polling
+    if not os.getenv('WEBHOOK_URL'):
+        bot_thread = threading.Thread(target=start_bot_thread, daemon=True)
+        bot_thread.start()
     
     # Start FastAPI server
     uvicorn.run(fastapi_app, host="0.0.0.0", port=PORT)
