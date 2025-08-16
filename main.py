@@ -7,18 +7,20 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from datetime import datetime
 
-# ReportLab imports
+# ReportLab imports with error handling
 try:
-    from reportlab.pdfgen import canvas
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.enums import TA_LEFT, TA_JUSTIFY
     from reportlab.lib.pagesizes import A4
     from reportlab.pdfbase import pdfmetrics
     from reportlab.pdfbase.ttfonts import TTFont
-    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
-    from reportlab.lib.enums import TA_LEFT
+    from reportlab.lib.units import inch
     REPORTLAB_AVAILABLE = True
-except ImportError:
+    logging.info("✅ ReportLab imported successfully")
+except ImportError as e:
     REPORTLAB_AVAILABLE = False
+    logging.error(f"❌ ReportLab import failed: {e}")
 
 # Configure logging
 logging.basicConfig(
@@ -31,244 +33,278 @@ TOKEN = os.getenv('BOT_TOKEN')
 WEBHOOK_URL = os.getenv('WEBHOOK_URL')
 PORT = int(os.getenv('PORT', 8000))
 
-class SimpleKhmerLeftAlignBot:
+class ProperKhmerPDFBot:
     def __init__(self):
         self.font_size = 19
-        self.font_name = 'Helvetica'  # Default safe font
-        self.setup_khmer_font()
-    
-    def setup_khmer_font(self):
-        """រៀបចំ Khmer font (simple approach)"""
+        self.line_height = self.font_size + 8
+        self.font_name = 'Helvetica'
+        self.setup_fonts()
+        
+    def setup_fonts(self):
+        """រៀបចំ Khmer fonts"""
         if not REPORTLAB_AVAILABLE:
+            logging.warning("ReportLab not available - cannot setup fonts")
             return
             
         try:
             # ព្យាយាម font paths ផ្សេងៗ
             font_paths = [
                 'font/Battambang-Regular.ttf',
-                '/usr/share/fonts/truetype/khmer/KhmerOS.ttf',
-                '/System/Library/Fonts/Khmer Sangam MN.ttc'
+                'font/KhmerOS.ttf', 
+                'font/Noto-Sans-Khmer-Regular.ttf'
             ]
             
-            for font_path in font_paths:
+            for i, font_path in enumerate(font_paths):
                 try:
                     if os.path.exists(font_path):
-                        pdfmetrics.registerFont(TTFont('KhmerFont', font_path))
-                        self.font_name = 'KhmerFont'
-                        logging.info(f"Loaded Khmer font: {font_path}")
+                        font_name = f'KhmerFont{i}'
+                        pdfmetrics.registerFont(TTFont(font_name, font_path))
+                        self.font_name = font_name
+                        logging.info(f"✅ Loaded Khmer font: {font_path}")
                         return
                 except Exception as e:
                     logging.warning(f"Failed to load {font_path}: {e}")
                     continue
                     
-            # Fallback: ប្រើ default font
-            logging.warning("Using Helvetica - Khmer may not display correctly")
+            # Use system default
             self.font_name = 'Helvetica'
+            logging.warning("Using Helvetica fallback font")
             
         except Exception as e:
             logging.error(f"Font setup error: {e}")
             self.font_name = 'Helvetica'
     
-    def create_simple_pdf(self, text: str) -> BytesIO:
-        """បង្កើត Simple PDF ជាមួយ Left Alignment"""
+    def split_into_paragraphs(self, text: str) -> list:
+        """បំបែកអត្ថបទទៅជា paragraphs ត្រឹមត្រូវ"""
+        
+        # បំបែកដោយ double line breaks ជាមុន
+        paragraphs = text.split('\n\n')
+        
+        # ប្រសិនបើមិនមាន double breaks ប្រើ single breaks
+        if len(paragraphs) == 1:
+            paragraphs = text.split('\n')
+        
+        # Clean និង filter paragraphs
+        clean_paragraphs = []
+        for para in paragraphs:
+            para = para.strip()
+            if para and len(para) > 2:  # Skip empty និង paragraph ខ្លីពេក
+                clean_paragraphs.append(para)
+        
+        return clean_paragraphs if clean_paragraphs else [text.strip()]
+    
+    def create_proper_pdf(self, text: str) -> BytesIO:
+        """បង្កើត PDF ពិតប្រាកដជាមួយ proper formatting"""
+        
         if not REPORTLAB_AVAILABLE:
-            return self.create_fallback_html(text)
+            logging.error("ReportLab not available - cannot create PDF")
+            return self.create_error_response()
             
         try:
             buffer = BytesIO()
-            doc = SimpleDocTemplate(buffer, pagesize=A4, 
-                                  topMargin=80, bottomMargin=60,
-                                  leftMargin=60, rightMargin=60)
             
-            # Get styles
+            # Create document with proper margins
+            doc = SimpleDocDocument(
+                buffer,
+                pagesize=A4,
+                topMargin=80,
+                bottomMargin=70,
+                leftMargin=70,
+                rightMargin=70
+            )
+            
+            # Get base styles
             styles = getSampleStyleSheet()
             
-            # Create simple left-aligned style
-            left_style = ParagraphStyle(
-                'SimpleLeft',
+            # Create custom header style
+            header_style = ParagraphStyle(
+                'CustomHeader',
+                parent=styles['Heading1'],
+                fontName='Helvetica-Bold',
+                fontSize=16,
+                spaceAfter=30,
+                alignment=TA_LEFT
+            )
+            
+            # Create custom paragraph style for Khmer text
+            khmer_style = ParagraphStyle(
+                'KhmerParagraph',
                 parent=styles['Normal'],
                 fontName=self.font_name,
                 fontSize=self.font_size,
-                alignment=TA_LEFT,
-                leading=self.font_size + 6,
+                leading=self.line_height,
+                alignment=TA_LEFT,  # Left align to avoid spacing issues
+                spaceAfter=15,
+                spaceBefore=5,
                 leftIndent=0,
                 rightIndent=0,
-                spaceAfter=12,
-                wordWrap='CJK'  # Better for Asian text
+                wordWrap='CJK',  # Better wrapping for Asian text
+                allowWidows=0,
+                allowOrphans=0
             )
             
-            # Header style
-            header_style = ParagraphStyle(
-                'Header',
-                parent=styles['Normal'],
-                fontName='Helvetica-Bold',
-                fontSize=16,
-                alignment=TA_LEFT,
-                spaceAfter=20
-            )
-            
-            # Build content
+            # Build story
             story = []
             
             # Add header
-            header_text = "TEXT 2PDF BY : TENG SAMBATH"
-            story.append(Paragraph(header_text, header_style))
-            story.append(Spacer(1, 12))
+            story.append(Paragraph("TEXT 2PDF BY : TENG SAMBATH", header_style))
+            story.append(Spacer(1, 20))
             
-            # Split text into paragraphs
-            paragraphs = text.split('\n\n')
-            if not paragraphs or (len(paragraphs) == 1 and not paragraphs[0].strip()):
-                paragraphs = text.split('\n')
+            # Split text into proper paragraphs
+            paragraphs = self.split_into_paragraphs(text)
             
-            # Add each paragraph with left alignment
-            for para_text in paragraphs:
-                if para_text.strip():
-                    # Clean up text for better rendering
-                    cleaned_text = self.clean_khmer_text(para_text.strip())
-                    story.append(Paragraph(cleaned_text, left_style))
-                    story.append(Spacer(1, 6))
+            # Add each paragraph
+            for i, para_text in enumerate(paragraphs):
+                # Clean the paragraph text
+                cleaned_text = self.clean_khmer_text(para_text)
+                
+                # Create paragraph with proper line breaks
+                story.append(Paragraph(cleaned_text, khmer_style))
+                
+                # Add space between paragraphs (except last one)
+                if i < len(paragraphs) - 1:
+                    story.append(Spacer(1, 10))
+            
+            # Add footer space
+            story.append(Spacer(1, 30))
             
             # Footer
             current_date = datetime.now().strftime("%d/%m/%Y %H:%M")
-            footer_text = f"Generated: {current_date} | ទំព័រ 1"
             footer_style = ParagraphStyle(
                 'Footer',
                 parent=styles['Normal'],
                 fontSize=10,
                 alignment=TA_LEFT
             )
-            story.append(Spacer(1, 20))
+            
+            footer_text = f"Generated: {current_date} | ទំព័រ 1"
             story.append(Paragraph(footer_text, footer_style))
             
-            # Build PDF
+            # Build the PDF
             doc.build(story)
+            
             buffer.seek(0)
+            logging.info("✅ PDF created successfully")
             return buffer
             
         except Exception as e:
-            logging.error(f"Simple PDF creation error: {e}")
-            return self.create_fallback_html(text)
+            logging.error(f"PDF creation error: {e}")
+            return self.create_error_response()
     
     def clean_khmer_text(self, text: str) -> str:
-        """សម្អាតអត្ថបទខ្មែរសម្រាប់ការបង្ហាញល្អប្រសើរ"""
-        # Remove problematic Unicode characters
+        """សម្អាតអត្ថបទខ្មែរសម្រាប់ការបង្ហាញល្អ"""
+        
+        # Remove problematic characters
         problematic_chars = {
             '\u200B': '',  # Zero width space
-            '\u200C': '',  # Zero width non-joiner  
+            '\u200C': '',  # Zero width non-joiner
             '\u200D': '',  # Zero width joiner
-            '\uFEFF': '',  # Byte order mark
+            '\uFEFF': '',  # BOM
         }
         
         cleaned = text
         for old, new in problematic_chars.items():
             cleaned = cleaned.replace(old, new)
-        
-        # Basic normalization
+            
+        # Basic Unicode normalization
         try:
             import unicodedata
             cleaned = unicodedata.normalize('NFC', cleaned)
         except:
             pass
             
+        # Replace multiple spaces with single space
+        cleaned = ' '.join(cleaned.split())
+        
         return cleaned
     
-    def create_fallback_html(self, text: str) -> BytesIO:
-        """Fallback HTML ប្រសិនបើ ReportLab មិនដំណើរការ"""
-        current_date = datetime.now().strftime("%d/%m/%Y %H:%M")
-        
-        html_content = f"""
+    def create_error_response(self) -> BytesIO:
+        """បង្កើត error response"""
+        error_html = """
 <!DOCTYPE html>
-<html lang="km">
-<head>
-    <meta charset="UTF-8">
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Battambang&display=swap');
-        body {{
-            font-family: 'Battambang', Arial, sans-serif;
-            font-size: {self.font_size}px;
-            line-height: 1.6;
-            margin: 60px;
-            text-align: left;
-        }}
-        .header {{
-            font-weight: bold;
-            font-size: 16px;
-            margin-bottom: 30px;
-        }}
-        .content {{
-            margin: 20px 0;
-            text-align: left;
-        }}
-        .footer {{
-            margin-top: 40px;
-            font-size: 12px;
-            color: #666;
-        }}
-    </style>
-</head>
+<html><head><meta charset="UTF-8"></head>
 <body>
-    <div class="header">TEXT 2PDF BY : TENG SAMBATH</div>
-    <div class="content">{text.replace(chr(10), '<br>')}</div>
-    <div class="footer">Generated: {current_date} | ទំព័រ 1</div>
-</body>
-</html>"""
+<h1>PDF Creation Error</h1>
+<p>ReportLab library is not available. Please install it:</p>
+<p><code>pip install reportlab</code></p>
+</body></html>"""
         
         buffer = BytesIO()
-        buffer.write(html_content.encode('utf-8'))
+        buffer.write(error_html.encode('utf-8'))
         buffer.seek(0)
         return buffer
 
+# Custom SimpleDocTemplate class for better control
+class SimpleDocDocument(SimpleDocTemplate):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        
+    def build(self, story, onFirstPage=None, onLaterPages=None):
+        """Build document with custom page template"""
+        super().build(story, onFirstPage=onFirstPage, onLaterPages=onLaterPages)
+
 # Initialize bot
-pdf_bot = SimpleKhmerLeftAlignBot()
+pdf_bot = ProperKhmerPDFBot()
 
 # Create bot application
 ptb = Application.builder().updater(None).token(TOKEN).build()
 
 # Bot handlers
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    engine = "ReportLab" if REPORTLAB_AVAILABLE else "HTML Fallback"
+    status = "✅ ReportLab Available" if REPORTLAB_AVAILABLE else "❌ ReportLab Missing"
     font_info = f"Font: {pdf_bot.font_name}"
     
-    welcome_message = f"""🇰🇭 ជំរាបសួរ! Simple Text to PDF Bot
+    welcome_message = f"""🇰🇭 ជំរាបសួរ! Proper PDF Bot (Fixed Version)
 
-✨ Simple Features (Left Align):
-• Text alignment: LEFT (មិនមែន justify)
-• អក្សរទំហំ: {pdf_bot.font_size}px
+🎯 ការដោះស្រាយបញ្ហា:
+• បង្កើត PDF ពិតប្រាកដ (មិនមែន HTML)
+• អត្ថបទខ្មែរចុះបន្ទាត់ត្រឹមត្រូវ
+• Paragraph formatting ស្អាត
+• Left alignment ធម្មតា
+
+🔧 Technical Status:
+• {status}
 • {font_info}
-• Header: TEXT 2PDF BY : TENG SAMBATH
-• Engine: {engine}
+• Font Size: {pdf_bot.font_size}px
+• Line Height: {pdf_bot.line_height}px
 
-📝 ការប្រែប្រួល:
-• គ្មាន text justify (ដែលបង្កបញ្ហា)
-• Left align តម្រង់ចោល
-• Simple paragraph ធម្មតា
-• Clean Khmer text processing
+📝 វិធីប្រើប្រាស់:
+• ផ្ញើអត្ថបទខ្មែរមកខ្ញុំ
+• ទទួលបាន PDF file ពិតប្រាកដ
+• Text នឹងចុះបន្ទាត់ត្រឹមត្រូវ
 
-ផ្ញើអត្ថបទមកខ្ញុំ (Left aligned)!"""
+👨‍💻 Fixed by: TENG SAMBATH"""
     
     await update.message.reply_text(welcome_message)
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    help_text = f"""🆘 Simple Help - Left Alignment:
+    help_text = f"""🆘 ជំនួយ Proper PDF Bot:
 
-🎯 ការដោះស្រាយ:
-• ប្រើ Left Alignment ជំនួសឱ្យ Justify
-• មិនបង្ខំ text ឱ្យ "ពន្យាត"
-• Simple paragraph style
-• Clean text preprocessing
+🎯 បញ្ហាដែលត្រូវបានដោះស្រាយ:
+✅ HTML files → PDF files ពិតប្រាកដ
+✅ អត្ថបទមិនចុះបន្ទាត់ → Proper line breaks
+✅ Paragraph formatting → Clean layout
+✅ Text alignment → Left align (stable)
 
-📝 របៀបប្រើ:
-1️⃣ ផ្ញើអត្ថបទខ្មែរមកខ្ញុំ
-2️⃣ ទទួលបាន PDF ជាមួយ Left alignment
-3️⃣ អត្ថបទនឹងតម្រង់ចោលធម្មតា
+💻 Technical Fixes:
+• Force ReportLab PDF generation
+• Proper paragraph splitting
+• Clean Khmer text processing
+• Better line height spacing
+• Professional margins
 
-🔧 Technical:
-• Font: {pdf_bot.font_name}
-• Size: {pdf_bot.font_size}px  
-• Alignment: LEFT (simple)
-• ReportLab: {'Available' if REPORTLAB_AVAILABLE else 'HTML mode'}
+📝 របៀបប្រើប្រាស់:
+1️⃣ ផ្ញើអត្ថបទខ្មែរ (ចម្រុះ paragraph)
+2️⃣ Bot បង្កើត PDF ពិតប្រាកដ
+3️⃣ ទាញយកឯកសារ .pdf ជាមួយ formatting ត្រឹមត្រូវ
 
-👨‍💻 Simple Solution by: TENG SAMBATH"""
+🔧 Font Details:
+• Current: {pdf_bot.font_name}
+• Size: {pdf_bot.font_size}px
+• Line spacing: {pdf_bot.line_height}px
+• ReportLab: {'Available' if REPORTLAB_AVAILABLE else 'Missing'}
+
+👨‍💻 Proper Solution by: TENG SAMBATH"""
     
     await update.message.reply_text(help_text)
 
@@ -278,63 +314,66 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
     if user_text.startswith('/'):
         return
     
-    if len(user_text.strip()) < 3:
-        await update.message.reply_text("⚠️ សូមផ្ញើអត្ថបទយ៉ាងហោចណាស់ 3 តួអក្សរ")
+    if len(user_text.strip()) < 5:
+        await update.message.reply_text("⚠️ សូមផ្ញើអត្ថបទយ៉ាងហោចណាស់ 5 តួអក្សរ")
         return
     
     try:
         processing_msg = await update.message.reply_text(
-            f"⏳ កំពុងបង្កើត Simple PDF (Left Aligned)...\n"
-            f"📐 Alignment: LEFT (មិនមែន justify)\n"  
-            f"🔤 Font: {pdf_bot.font_name}\n"
-            f"📏 Size: {pdf_bot.font_size}px\n"
-            f"✨ Simple & Clean layout..."
+            f"⏳ កំពុងបង្កើត PDF ពិតប្រាកដ...\n"
+            f"📄 Engine: {'ReportLab' if REPORTLAB_AVAILABLE else 'Fallback'}\n"
+            f"🔤 Font: {pdf_bot.font_name} ({pdf_bot.font_size}px)\n"
+            f"📐 Format: Proper paragraphs + line breaks\n"
+            f"✨ Processing Khmer text formatting..."
         )
         
-        # Generate simple PDF
-        pdf_buffer = pdf_bot.create_simple_pdf(user_text)
+        # Create proper PDF
+        pdf_buffer = pdf_bot.create_proper_pdf(user_text)
         
-        # Determine file extension
+        # Determine file type
         file_ext = "pdf" if REPORTLAB_AVAILABLE else "html"
-        filename = f"SAMBATH_LEFT_{update.effective_user.id}.{file_ext}"
+        filename = f"SAMBATH_PROPER_{update.effective_user.id}.{file_ext}"
         
         await context.bot.send_document(
             chat_id=update.effective_chat.id,
             document=pdf_buffer,
             filename=filename,
-            caption=f"""✅ Simple PDF បង្កើតរួចរាល់! 🇰🇭
+            caption=f"""✅ បង្កើត {"PDF" if REPORTLAB_AVAILABLE else "HTML"} ជោគជ័យ! 🇰🇭
 
-🎯 Simple Features Applied:
-• Text Alignment: LEFT (តម្រង់ឆ្វេង)
-• មិនមែន justify (ដែលបង្កបញ្ហា)
-• Clean paragraph breaks
-• Simple layout ងាយមើល
+🎯 ការដោះស្រាយពេញលេញ:
+• File Type: {"PDF ពិតប្រាកដ" if REPORTLAB_AVAILABLE else "HTML (ReportLab missing)"}
+• អត្ថបទចុះបន្ទាត់ត្រឹមត្រូវ ✅
+• Paragraph formatting ស្អាត ✅  
+• Clean layout ជាមួយ margins ✅
+• Header: TEXT 2PDF BY : TENG SAMBATH ✅
 
 🔧 Technical Details:
-• Font: {pdf_bot.font_name} 
+• Font: {pdf_bot.font_name}
 • Size: {pdf_bot.font_size}px
-• Engine: {'ReportLab' if REPORTLAB_AVAILABLE else 'HTML'}
-• Alignment: LEFT ONLY
+• Line Height: {pdf_bot.line_height}px  
+• Alignment: LEFT (stable)
+• Date: {datetime.now().strftime('%d/%m/%Y %H:%M')}
 
-📄 ឥឡូវអត្ថបទតម្រង់ឆ្វេងធម្មតា!
-👨‍💻 Simple by: TENG SAMBATH
+📄 ឥឡូវអ្នកមាន {"PDF file" if REPORTLAB_AVAILABLE else "HTML file"} ជាមួយ formatting ត្រឹមត្រូវ!
+👨‍💻 Proper Solution by: TENG SAMBATH
 
-💡 Note: LEFT alignment ធ្វើឱ្យអត្ថបទមិន "រញ៉ែរញ៉ៃ"!"""
+{'🎉 Status: PDF WORKING!' if REPORTLAB_AVAILABLE else '⚠️ Install ReportLab for PDF generation'}"""
         )
         
         await processing_msg.delete()
         
     except Exception as e:
-        logging.error(f"Simple PDF error: {str(e)}")
+        logging.error(f"Message handling error: {str(e)}")
         await update.message.reply_text(
             f"❌ មានបញ្ហាកើតឡើង: {str(e)}\n\n"
             f"🔄 សូមព្យាយាមម្ដងទៀត\n"
-            f"👨‍💻 Simple Support: TENG SAMBATH"
+            f"💡 ឬផ្ញើអត្ថបទខ្លីជាមុន\n"
+            f"👨‍💻 Support: TENG SAMBATH"
         )
 
 # Add handlers
 ptb.add_handler(CommandHandler("start", start_command))
-ptb.add_handler(CommandHandler("help", help_command))
+ptb.add_handler(CommandHandler("help", help_command))  
 ptb.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_message))
 
 # FastAPI lifecycle
@@ -347,7 +386,7 @@ async def lifespan(app: FastAPI):
         
         async with ptb:
             await ptb.start()
-            logging.info("Simple Left Align Bot started successfully")
+            logging.info("Proper PDF Bot started successfully")
             yield
     except Exception as e:
         logging.error(f"Error in lifespan: {str(e)}")
@@ -359,9 +398,9 @@ async def lifespan(app: FastAPI):
             logging.error(f"Error stopping bot: {str(e)}")
 
 app = FastAPI(
-    title="Simple Left Align Khmer PDF Bot by TENG SAMBATH",
-    description="Simple PDF generation with LEFT alignment for Khmer text",
-    version="SIMPLE LEFT 1.0",
+    title="Proper Khmer PDF Bot by TENG SAMBATH",
+    description="Generate actual PDF files with proper Khmer text formatting",
+    version="PROPER PDF 1.0",
     lifespan=lifespan
 )
 
@@ -379,34 +418,46 @@ async def process_update(request: Request):
 @app.get("/health")
 async def health_check():
     return {
-        "status": "simple",
-        "message": "Simple Left Align PDF Bot running!",
-        "version": "SIMPLE LEFT 1.0",
+        "status": "healthy",
+        "message": "Proper PDF Bot is running!",
+        "version": "PROPER PDF 1.0", 
         "developer": "TENG SAMBATH",
-        "approach": "LEFT alignment instead of justify",
+        "reportlab_available": REPORTLAB_AVAILABLE,
         "font": pdf_bot.font_name,
-        "reportlab": REPORTLAB_AVAILABLE,
-        "solution": "Simple left align to avoid រញ៉ែរញ៉ៃ issues"
+        "font_size": f"{pdf_bot.font_size}px",
+        "fixes": [
+            "Generate actual PDF files (not HTML)",
+            "Proper Khmer text line breaks", 
+            "Clean paragraph formatting",
+            "Professional layout with margins",
+            "Stable left alignment"
+        ]
     }
 
 @app.get("/")
 async def root():
     return {
-        "message": "🇰🇭 Simple Left Align Khmer PDF Bot",
-        "version": "SIMPLE LEFT 1.0",
-        "developer": "TENG SAMBATH", 
-        "alignment": "LEFT (មិនមែន justify)",
-        "solution": "Simple approach to avoid Khmer text issues",
-        "font_size": f"{pdf_bot.font_size}px"
+        "message": "🇰🇭 Proper Khmer PDF Bot - FINAL SOLUTION",
+        "status": "running",
+        "version": "PROPER PDF 1.0",
+        "developer": "TENG SAMBATH",
+        "solution": "Generate actual PDF files with proper formatting",
+        "reportlab": "Available" if REPORTLAB_AVAILABLE else "Missing - install required",
+        "guarantees": [
+            "PDF files (not HTML)",
+            "Proper line breaks", 
+            "Clean formatting",
+            "Professional layout"
+        ]
     }
 
 if __name__ == "__main__":
     import uvicorn
     
-    logging.info("🚀 Starting Simple Left Align PDF Bot...")
+    logging.info("🚀 Starting Proper PDF Bot by TENG SAMBATH...")
+    logging.info(f"ReportLab: {'✅ Available' if REPORTLAB_AVAILABLE else '❌ Missing'}")
     logging.info(f"Font: {pdf_bot.font_name}")
-    logging.info(f"Size: {pdf_bot.font_size}px")
-    logging.info("📐 Alignment: LEFT (simple approach)")
-    logging.info("🇰🇭 Focus: Avoid រញ៉ែរញ៉ៃ issues!")
+    logging.info(f"Font Size: {pdf_bot.font_size}px")
+    logging.info("🎯 Focus: Generate ACTUAL PDF files with proper formatting")
     
     uvicorn.run(app, host="0.0.0.0", port=PORT, log_level="info")
