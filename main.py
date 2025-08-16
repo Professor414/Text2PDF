@@ -1,82 +1,72 @@
 import os
-import logging
-from io import BytesIO
-from datetime import datetime
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+import logging
+from weasyprint import HTML
+from io import BytesIO
+from datetime import datetime
 
 logging.basicConfig(level=logging.INFO)
 TOKEN = os.getenv("BOT_TOKEN")
 if not TOKEN:
-    raise RuntimeError("Please set BOT_TOKEN as environment variable.")
+    raise RuntimeError("Please set BOT_TOKEN")
 
-FONT_PATH = "font/Battambang-Regular.ttf"  # Or the path where you upload Khmer font
-
-class KhmerPDF:
-    def __init__(self):
-        from fpdf import FPDF
-        self.FPDF = FPDF
-        self.left_margin = self.right_margin = 6.35     # 0.25in = 6.35mm
-        self.top_margin = self.bottom_margin = 10.16    # 0.4in = 10.16mm
-        self.font_size = 19
-        self.footer_font_size = 10
-        self.font_name = "Battambang"
-
-    def make_pdf(self, text):
-        pdf = self.FPDF()
-        pdf.add_page()
-        # Add Battambang Unicode font
-        pdf.add_font(self.font_name, '', FONT_PATH, uni=True)
-        pdf.set_font(self.font_name, '', self.font_size)
-        pdf.set_left_margin(self.left_margin)
-        pdf.set_right_margin(self.right_margin)
-        pdf.set_top_margin(self.top_margin)
-        pdf.set_auto_page_break(True, margin=self.bottom_margin)
-        lines = text.replace('\r\n', '\n').split('\n')
-        for idx, line in enumerate(lines):
-            pdf.multi_cell(0, 10, line, align='L')
-        # Footer
-        pdf.set_y(-15)
-        pdf.set_font(self.font_name, '', self.footer_font_size)
-        pdf.cell(0, 10, 'ទំព័រ 1 | Created by TENG SAMBATH', 0, 0, 'L')
-        buffer = BytesIO()
-        pdf.output(buffer)
-        buffer.seek(0)
-        return buffer
-
-pdf_gen = KhmerPDF()
+HTML_TMPL = '''
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+    @page {{
+        margin-left: 0.25in;
+        margin-right: 0.25in;
+        margin-top: 0.4in;
+        margin-bottom: 0.4in;
+    }}
+    body {{
+        font-family: 'Battambang','Noto Sans Khmer','Khmer OS','Arial',sans-serif;
+        font-size: 19px;
+        line-height: 2;
+    }}
+    .footer {{
+        color: #666;
+        font-size: 10px;
+        margin-top: 30px;
+    }}
+</style>
+<link href="https://fonts.googleapis.com/css2?family=Battambang:wght@400;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div>{body}</div>
+    <div class="footer">ទំព័រ 1 | Created by TENG SAMBATH</div>
+</body>
+</html>
+'''
 
 app = Application.builder().token(TOKEN).build()
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "PDF Khmer Bot (no HTML, no browser convert)\n\n"
-        "• OUTPUT: PDF true Khmer\n"
-        "• Margins LEFT & RIGHT: 0.25in (6.35mm)\n"
-        "• Font: Battambang 19px (.ttf) - Unicode OK\n"
-        "• Footer: 'ទំព័រ 1 | Created by TENG SAMBATH'\n"
-        "• Send Khmer text to get true PDF!"
-    )
+    await update.message.reply_text("✅ Bot PDF Khmer Perfect Shaping (WeasyPrint/HTML to PDF)\n\n• Margins 0.25in, 0.4in\n• Font: Battambang/Brower shaping\n• Footer: 'ទំព័រ 1 | Created by TENG SAMBATH'")
 
 async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
-    if text.startswith('/'):
+    if text.startswith("/"):
         return
     if len(text) < 3:
-        await update.message.reply_text("សូមផ្ញើអត្ថបទយ៉ាងហោចណាស់ 3 តួអក្សរ")
+        await update.message.reply_text("សូមផ្ញើអក្សរច្រើនជាងនេះ!")
         return
-    try:
-        pdf_buffer = pdf_gen.make_pdf(text)
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"SAMBATH_PDF_{timestamp}.pdf"
-        await context.bot.send_document(
-            chat_id=update.effective_chat.id,
-            document=pdf_buffer,
-            filename=filename,
-            caption="✅ PDF Khmer Unicode (margins 0.25in) created 🚀"
-        )
-    except Exception as e:
-        await update.message.reply_text(f"❌ PDF កំហុស: {e}")
+    paragraphs = ['<p>'+line+'</p>' for line in text.replace('\r','').split('\n') if line.strip()]
+    html = HTML_TMPL.format(body='\n'.join(paragraphs))
+    pdf_buffer = BytesIO()
+    HTML(string=html).write_pdf(pdf_buffer)
+    pdf_buffer.seek(0)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"KHMER_BEAUTIFUL_{timestamp}.pdf"
+    await context.bot.send_document(
+        chat_id=update.effective_chat.id,
+        document=pdf_buffer,
+        filename=filename,
+        caption='✅ PDF Khmer shape correct! Margins 0.25in'
+    )
 
 app.add_handler(CommandHandler("start", start))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle))
