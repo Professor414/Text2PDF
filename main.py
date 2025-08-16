@@ -22,8 +22,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     <title>PDF Khmer by TENG SAMBATH</title>
     <style>
         @page {{
-            margin-left: 0.35in;
-            margin-right: 0.35in;
+            margin-left: 0.4in;
+            margin-right: 0.4in;
             margin-top: 0.4in;
             margin-bottom: 0.4in;
         }}
@@ -60,7 +60,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         {content}
     </div>
     <div class="footer">
-        ទំព័រ 1 | Created by TENG SAMBATH
+     TEXT2PDF by : TENG SAMBATH
     </div>
 </body>
 </html>"""
@@ -71,15 +71,8 @@ app = Application.builder().token(TOKEN).build()
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Start command handler"""
     await update.message.reply_text(
-        "🇰🇭 **PDF Khmer Bot** - Auto PDF Generator\n\n"
-        "✅ **Features:**\n"
-        "• Auto convert text to PDF (no HTML, no browser)\n" 
-        "• Perfect Khmer font shaping\n"
-        "• Margins: Left/Right 0.35\", Top/Bottom 0.4\"\n"
-        "• Font: 19px Battambang/Noto Sans Khmer\n"
-        "• Footer: ទំព័រ 1 | Created by TENG SAMBATH\n\n"
-        "📝 **Usage:** Just send any text, get PDF back instantly!\n\n"
-        "👨‍💻 **By: TENG SAMBATH**"
+        "🇰🇭 Text2PDF | Teng Sambath \n\n"
+        "👨‍💻 Text2PDF Created By : Teng Sambath"
     )
 
 async def convert_text_to_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -119,11 +112,8 @@ async def convert_text_to_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE
             chat_id=update.effective_chat.id,
             document=pdf_buffer,
             filename=filename,
-            caption="✅ **PDF បង្កើតជោគជ័យ!**\n\n"
-                   "📐 Margins: Left/Right 0.35\", Top/Bottom 0.4\"\n"
-                   "📝 Font: 19px Khmer fonts with perfect shaping\n"
-                   "🎯 Ready to use - no conversion needed!\n\n"
-                   "👨‍💻 **Created by: TENG SAMBATH**"
+            caption="✅ PDF បង្កើតជោគជ័យ!\n\n"
+                   "👨‍💻 Text2PDF Created By : Teng Sambath"
         )
         
         # Log success
