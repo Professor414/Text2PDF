@@ -8,6 +8,15 @@ from fastapi import FastAPI
 import asyncio
 import threading
 
+# FPDF import for direct PDF generation
+try:
+    from fpdf import FPDF
+    PDF_AVAILABLE = True
+    logging.info("✅ FPDF imported successfully - Direct PDF generation enabled!")
+except ImportError as e:
+    PDF_AVAILABLE = False
+    logging.error(f"❌ FPDF not available: {e}")
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -20,19 +29,22 @@ if not TOKEN:
     logger.error("BOT_TOKEN environment variable required!")
     exit(1)
 
-class ReliablePDFBot:
+class DirectPDFGenerator:
     def __init__(self):
         self.font_size = 19
-        self.footer_font_size = 12
+        self.footer_font_size = 10
         
-        # Custom margins as requested
-        self.left_margin = "0.25in"    # 0.25 inches left
-        self.right_margin = "0.25in"   # 0.25 inches right
-        self.top_margin = "0.4in"      # 0.4 inches top
-        self.bottom_margin = "0.4in"   # 0.4 inches bottom
+        # Custom margins in mm (FPDF uses mm by default)
+        self.left_margin = 6.35   # 0.25 inches = 6.35 mm
+        self.right_margin = 6.35  # 0.25 inches = 6.35 mm  
+        self.top_margin = 10.16   # 0.4 inches = 10.16 mm
+        self.bottom_margin = 10.16 # 0.4 inches = 10.16 mm
+        
+        self.line_height = 8  # Line spacing in mm
         
     def clean_text(self, text):
-        """Clean text for better display"""
+        """Clean text for PDF generation"""
+        # Remove problematic Unicode characters
         problematic_chars = {
             '\u200B': '',  # Zero width space
             '\u200C': '',  # Zero width non-joiner
@@ -62,272 +74,141 @@ class ReliablePDFBot:
         
         return clean_paragraphs if clean_paragraphs else [cleaned_text]
     
-    def create_reliable_pdf(self, text):
-        """Create reliable PDF using HTML + CSS"""
-        current_date = datetime.now().strftime("%d/%m/%Y %H:%M")
+    def create_direct_pdf(self, text):
+        """Create direct PDF using FPDF - NO HTML conversion"""
+        if not PDF_AVAILABLE:
+            raise ImportError("FPDF not available - cannot create direct PDF")
+        
+        # Create PDF instance
+        pdf = FPDF()
+        pdf.add_page()
+        
+        # Set custom margins
+        pdf.set_margins(self.left_margin, self.top_margin, self.right_margin)
+        pdf.set_auto_page_break(auto=True, margin=self.bottom_margin)
+        
+        # Add font - try to use Unicode font, fallback to built-in
+        try:
+            pdf.add_font('DejaVu', '', '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf', uni=True)
+            pdf.set_font('DejaVu', size=self.font_size)
+            font_name = 'DejaVu'
+        except:
+            try:
+                # Alternative font paths
+                pdf.add_font('Ubuntu', '', '/usr/share/fonts/truetype/ubuntu/Ubuntu-R.ttf', uni=True)
+                pdf.set_font('Ubuntu', size=self.font_size)
+                font_name = 'Ubuntu'
+            except:
+                # Fallback to built-in font
+                pdf.set_font('Arial', size=self.font_size)
+                font_name = 'Arial'
+        
+        # Get paragraphs
         paragraphs = self.split_into_paragraphs(text)
         
-        # Format paragraphs as HTML
-        paragraph_html = ""
-        for i, para in enumerate(paragraphs):
-            # First paragraph without indent, others with indent
+        # Calculate effective width
+        effective_width = pdf.w - self.left_margin - self.right_margin
+        
+        # Add content paragraphs
+        for i, paragraph in enumerate(paragraphs):
+            if i > 0:
+                # Add spacing between paragraphs
+                pdf.ln(self.line_height * 0.5)
+            
+            # Add paragraph indent for non-first paragraphs
             if i == 0:
-                paragraph_html += f'<p class="content-paragraph first-paragraph">{para}</p>\n'
+                # First paragraph - no indent
+                pdf.multi_cell(effective_width, self.line_height, paragraph, align='L')
             else:
-                paragraph_html += f'<p class="content-paragraph">{para}</p>\n'
+                # Other paragraphs - with indent
+                indent = 10  # 10mm indent
+                pdf.set_x(pdf.get_x() + indent)
+                pdf.multi_cell(effective_width - indent, self.line_height, paragraph, align='L')
         
-        html_content = f'''<!DOCTYPE html>
-<html lang="km">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PDF by TENG SAMBATH</title>
-    <link href="https://fonts.googleapis.com/css2?family=Battambang:wght@400;700&family=Noto+Sans+Khmer:wght@400;700&display=swap" rel="stylesheet">
-    
-    <style>
-        @media print {{
-            @page {{
-                size: A4;
-                margin-top: {self.top_margin};
-                margin-bottom: {self.bottom_margin};
-                margin-left: {self.left_margin};
-                margin-right: {self.right_margin};
-            }}
-            
-            body {{
-                font-size: {self.font_size}px !important;
-                line-height: 1.8 !important;
-            }}
-            
-            .no-print {{
-                display: none !important;
-            }}
-        }}
+        # Add footer
+        pdf.ln(15)  # Space before footer
+        pdf.set_font('Arial', size=self.footer_font_size)
+        footer_text = "ទំព័រ 1 | Created by TENG SAMBATH"
+        pdf.multi_cell(effective_width, 5, footer_text, align='L')
         
-        body {{
-            font-family: 'Battambang', 'Noto Sans Khmer', Arial, sans-serif;
-            font-size: {self.font_size}px;
-            line-height: 1.8;
-            margin: {self.left_margin} {self.right_margin} {self.bottom_margin} {self.top_margin};
-            color: #333;
-            max-width: 100%;
-        }}
-        
-        .success-banner {{
-            background: #d4edda;
-            border: 2px solid #28a745;
-            color: #155724;
-            padding: 20px;
-            border-radius: 10px;
-            text-align: center;
-            margin: 20px 0;
-            font-weight: bold;
-        }}
-        
-        .instructions {{
-            background: #e3f2fd;
-            border: 2px solid #2196f3;
-            padding: 20px;
-            border-radius: 8px;
-            margin: 20px 0;
-        }}
-        
-        .instructions h3 {{
-            margin-top: 0;
-            color: #1976d2;
-        }}
-        
-        .instructions ol {{
-            margin: 10px 0;
-            padding-left: 25px;
-        }}
-        
-        .instructions li {{
-            margin: 8px 0;
-        }}
-        
-        .print-button {{
-            background: #28a745;
-            color: white;
-            padding: 15px 30px;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-            font-size: 18px;
-            display: block;
-            margin: 20px auto;
-            width: 300px;
-            transition: background-color 0.3s;
-        }}
-        
-        .print-button:hover {{
-            background: #218838;
-        }}
-        
-        .content {{
-            margin: 20px 0;
-        }}
-        
-        .content-paragraph {{
-            margin-bottom: 15px;
-            text-align: left;
-            text-indent: 30px;
-            line-height: 1.8;
-        }}
-        
-        .content-paragraph.first-paragraph {{
-            text-indent: 0;
-        }}
-        
-        .footer {{
-            margin-top: 50px;
-            font-size: {self.footer_font_size}px;
-            color: #666;
-            text-align: left;
-            border-top: 1px solid #ddd;
-            padding-top: 15px;
-        }}
-        
-        .margins-info {{
-            background: #fff3cd;
-            border: 1px solid #ffc107;
-            color: #856404;
-            padding: 15px;
-            border-radius: 5px;
-            margin: 20px 0;
-            font-size: 14px;
-        }}
-    </style>
-</head>
-<body>
-    <div class="success-banner no-print">
-        ✅ SUCCESS! គ្មានបញ្ហា ReportLab ទៀត! PDF Generation ដំណើរការ 100%!
-    </div>
-    
-    <div class="margins-info no-print">
-        📐 <strong>Custom Margins Applied:</strong><br>
-        • Left: {self.left_margin} | Right: {self.right_margin}<br>
-        • Top: {self.top_margin} | Bottom: {self.bottom_margin}<br>
-        • Font: {self.font_size}px Khmer fonts
-    </div>
-    
-    <div class="instructions no-print">
-        <h3>📄 របៀបទទួលបាន PDF ជាមួយ Margins ត្រឹមត្រូវ:</h3>
-        <ol>
-            <li>ចុចប៊ូតុង "Print to PDF" ខាងក្រោម</li>
-            <li>ឬចុច <kbd>Ctrl+P</kbd> (Windows) / <kbd>Cmd+P</kbd> (Mac)</li>
-            <li>ជ្រើសរើស "Save as PDF" ឬ "Microsoft Print to PDF"</li>
-            <li>ចុច Save</li>
-            <li>ទទួលបាន PDF ជាមួយ:</li>
-            <ul>
-                <li>Left margin: {self.left_margin}</li>
-                <li>Right margin: {self.right_margin}</li>
-                <li>Font size: {self.font_size}px</li>
-                <li>Footer: "ទំព័រ 1 | Created by TENG SAMBATH"</li>
-            </ul>
-        </ol>
-    </div>
-    
-    <button class="print-button no-print" onclick="window.print()">🖨️ Print to PDF</button>
-    
-    <div class="content">
-        {paragraph_html}
-    </div>
-    
-    <div class="footer">
-        ទំព័រ 1 | Created by TENG SAMBATH | Generated: {current_date}
-    </div>
-    
-    <script>
-        // Auto print dialog after 3 seconds
-        setTimeout(function() {{
-            if (confirm('ចង់ print ជា PDF ជាមួយ margins Left={self.left_margin}, Right={self.right_margin} ឥឡូវនេះទេ?')) {{
-                window.print();
-            }}
-        }}, 3000);
-    </script>
-</body>
-</html>'''
-        
+        # Output to BytesIO
         buffer = BytesIO()
-        buffer.write(html_content.encode('utf-8'))
+        pdf_output = pdf.output(dest='S').encode('latin-1')
+        buffer.write(pdf_output)
         buffer.seek(0)
+        
         return buffer
 
-# Initialize bot
-pdf_bot = ReliablePDFBot()
+# Initialize PDF generator
+pdf_generator = DirectPDFGenerator()
 
-# Create Telegram application (POLLING MODE)
+# Create Telegram application
 app = Application.builder().token(TOKEN).build()
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    welcome_message = f"""🇰🇭 ជំរាបសួរ! Reliable PDF Bot (No ReportLab Issues)
+    status = "✅ Available" if PDF_AVAILABLE else "❌ Not Available"
+    
+    welcome_message = f"""🇰🇭 ជំរាបសួរ! DIRECT PDF Bot (NO HTML!)
 
-✅ **Problem SOLVED:**
-• ReportLab dependency issues → ELIMINATED!
-• Using HTML + CSS + Print to PDF approach
-• 100% reliable on all platforms
+🎯 **DIRECT PDF Generation:**
+• FPDF Library: {status}  
+• Output: PDF files ពិតប្រាកដ (NOT HTML!)
+• No conversion needed - Direct PDF creation
 
-🎯 **Custom Margins Settings:**
-• Left Margin: {pdf_bot.left_margin} ✅
-• Right Margin: {pdf_bot.right_margin} ✅
-• Top Margin: {pdf_bot.top_margin}
-• Bottom Margin: {pdf_bot.bottom_margin}
+📐 **Custom Margins:**
+• Left Margin: 0.25 inches ({pdf_generator.left_margin}mm)
+• Right Margin: 0.25 inches ({pdf_generator.right_margin}mm)
+• Top Margin: 0.4 inches ({pdf_generator.top_margin}mm)
+• Bottom Margin: 0.4 inches ({pdf_generator.bottom_margin}mm)
 
-✨ **PDF Features:**
-• Font Size: {pdf_bot.font_size}px (ធំ និង ច្បាស់)
-• Google Fonts: Battambang + Noto Sans Khmer
+✨ **Direct PDF Features:**
+• Font Size: {pdf_generator.font_size}px
+• No Header (removed)
 • Footer: "ទំព័រ 1 | Created by TENG SAMBATH"
-• Professional layout with proper spacing
+• Left alignment
+• Auto line wrapping
+• Paragraph indentation
 
-📝 **របៀបប្រើប្រាស់:**
+📝 **Usage:**
 1. ផ្ញើអត្ថបទខ្មែរមកខ្ញុំ
-2. ទទួលបាន HTML file
-3. បើក HTML → Print → Save as PDF
-4. ទទួលបាន PDF ជាមួយ margins ត្រឹមត្រូវ!
+2. ទទួលបាន PDF file ដោយផ្ទាល់
+3. ទាញយកហើយប្រើបានភ្លាម - NO conversion needed!
 
-🌟 **Guaranteed: 100% Working - No Dependencies Issues!**
+🚫 **NO HTML CONVERSION - Pure PDF Generation!**
 
-👨‍💻 **Reliable Solution by: TENG SAMBATH**"""
+👨‍💻 **Direct PDF Solution by: TENG SAMBATH**"""
     
     await update.message.reply_text(welcome_message)
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    help_text = f"""🆘 **Reliable PDF Bot Help:**
+    help_text = f"""🆘 **DIRECT PDF Bot Help:**
 
-✅ **Why This Works 100%:**
-• No ReportLab dependency issues
-• Uses standard HTML + CSS
-• Browser print to PDF (universal support)
-• Custom margins via CSS @page rules
+🎯 **What's Different:**
+• Creates ACTUAL PDF files (not HTML)
+• Uses FPDF library for direct generation
+• NO browser conversion required
+• NO HTML involved at all
 
-📐 **Margin Specifications:**
-• Left: {pdf_bot.left_margin} (as requested)
-• Right: {pdf_bot.right_margin} (as requested)
-• Top: {pdf_bot.top_margin}
-• Bottom: {pdf_bot.bottom_margin}
+📐 **PDF Specifications:**
+• Left: 0.25" | Right: 0.25" (as requested)
+• Top: 0.4" | Bottom: 0.4"  
+• Font: {pdf_generator.font_size}px
+• Format: A4 paper size
 
-🎯 **Features:**
-• Font: {pdf_bot.font_size}px Khmer fonts
-• Google Fonts integration
-• Perfect text rendering
+✅ **Direct PDF Benefits:**
+• Instant PDF files
+• No conversion steps
 • Professional layout
-• Auto paragraph indentation
+• Custom margins applied directly
+• Ready to use immediately
 
-📝 **Step-by-Step:**
-1️⃣ Send text → Get HTML file
-2️⃣ Open HTML in browser
-3️⃣ Press Ctrl+P or Print button
-4️⃣ Select "Save as PDF"
-5️⃣ Perfect results with custom margins!
+📝 **How it Works:**
+1️⃣ You send text
+2️⃣ FPDF generates PDF directly  
+3️⃣ You get actual PDF file
+4️⃣ No HTML, no conversion - just PDF!
 
-💡 **Benefits:**
-- Works on ALL platforms
-- No installation issues
-- Perfect Khmer rendering
-- Custom margins support
-
-👨‍💻 **TENG SAMBATH - 100% Reliable Solution**"""
+👨‍💻 **TENG SAMBATH - Pure PDF Solution**"""
     
     await update.message.reply_text(help_text)
 
@@ -335,6 +216,11 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
     user_text = update.message.text
     
     if user_text.startswith('/'):
+        return
+        
+    # Check PDF library availability
+    if not PDF_AVAILABLE:
+        await update.message.reply_text("❌ FPDF library not available. Cannot create direct PDF.")
         return
         
     # Validate input
@@ -345,117 +231,111 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
     try:
         # Send processing message
         processing_msg = await update.message.reply_text(
-            f"""⏳ **បង្កើត PDF ជាមួយ Custom Margins...**
+            f"""⏳ **បង្កើត DIRECT PDF...**
 
-✅ No ReportLab issues - 100% reliable!
-📐 Left: {pdf_bot.left_margin} | Right: {pdf_bot.right_margin}
-📝 Font: {pdf_bot.font_size}px Khmer fonts
-🎯 HTML + CSS approach - Universal compatibility
+🎯 Engine: FPDF (NO HTML conversion)
+📐 Left: 0.25" | Right: 0.25"
+📝 Font: {pdf_generator.font_size}px
+📄 Output: PDF file ដោយផ្ទាល់
 ✨ Processing your text..."""
         )
         
-        # Create HTML for PDF
-        html_buffer = pdf_bot.create_reliable_pdf(user_text)
+        # Create direct PDF
+        pdf_buffer = pdf_generator.create_direct_pdf(user_text)
         
         # Generate filename
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"SAMBATH_RELIABLE_{timestamp}.html"
+        filename = f"SAMBATH_DIRECT_{timestamp}.pdf"
         
-        # Send HTML document
+        # Send PDF document
         await context.bot.send_document(
             chat_id=update.effective_chat.id,
-            document=html_buffer,
+            document=pdf_buffer,
             filename=filename,
-            caption=f"""✅ **PDF Generator ជោគជ័យ!** 🇰🇭
+            caption=f"""✅ **DIRECT PDF ជោគជ័យ!** 🇰🇭
 
-🎊 **No More ReportLab Issues!**
+🎊 **NO HTML CONVERSION - Pure PDF!**
 
-📐 **Custom Margins Applied:**
-• Left Margin: {pdf_bot.left_margin} ✅
-• Right Margin: {pdf_bot.right_margin} ✅  
-• Top Margin: {pdf_bot.top_margin} ✅
-• Bottom Margin: {pdf_bot.bottom_margin} ✅
-
-📄 **របៀបទទួលបាន PDF:**
-1. ទាញយក HTML file ខាងលើ ⬆️
-2. បើកដោយ browser (Chrome/Firefox/Edge)
-3. ចុច Print button ឬ Ctrl+P
-4. ជ្រើសរើស "Save as PDF"
-5. ទទួលបាន PDF ជាមួយ margins ត្រឹមត្រូវ!
-
-📋 **PDF Features:**
-• Font: {pdf_bot.font_size}px Perfect Khmer ✅
+📋 **Direct PDF Features:**
+• File Type: PDF (NOT HTML!) ✅
+• Left Margin: 0.25 inches ✅
+• Right Margin: 0.25 inches ✅  
+• Font Size: {pdf_generator.font_size}px ✅
 • Footer: "ទំព័រ 1 | Created by TENG SAMBATH" ✅
-• Professional layout ✅
-• Custom margins as requested ✅
+
+🎯 **Generated Using:**
+• FPDF Library - Direct PDF creation
+• No browser needed
+• No conversion steps
+• Instant PDF file
 
 📊 **Technical:**
-• Generated: {datetime.now().strftime('%d/%m/%Y %H:%M')}
-• Approach: HTML + CSS (100% reliable)
-• Compatibility: All browsers & OS
-• Dependencies: ZERO issues!
+• Created: {datetime.now().strftime('%d/%m/%Y %H:%M')}
+• Method: Direct PDF generation
+• Size: A4 with custom margins
+• Ready to use immediately!
 
-🌟 **Status: 100% WORKING - Guaranteed!**
-👨‍💻 **Reliable Solution by: TENG SAMBATH**"""
+🚫 **NO HTML - Just Pure PDF!**
+👨‍💻 **Direct Solution by: TENG SAMBATH**"""
         )
         
         # Delete processing message
         await processing_msg.delete()
         
         # Log success
-        logger.info(f"Reliable PDF created for user {update.effective_user.id}")
+        logger.info(f"Direct PDF created for user {update.effective_user.id}")
         
     except Exception as e:
-        logger.error(f"Error: {str(e)}")
-        await update.message.reply_text(f"❌ Error: {str(e)}")
+        logger.error(f"Error creating direct PDF: {str(e)}")
+        await update.message.reply_text(f"❌ មានបញ្ហាកើតឡើង: {str(e)}")
 
-# Add handlers to bot
+# Add handlers
 app.add_handler(CommandHandler("start", start_command))
 app.add_handler(CommandHandler("help", help_command))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_message))
 
 # FastAPI for health check
-fastapi_app = FastAPI(title="Reliable PDF Bot - No Dependencies Issues")
+fastapi_app = FastAPI(title="Direct PDF Bot - NO HTML Conversion")
 
 @fastapi_app.get("/")
 async def root():
     return {
-        "status": "100% reliable",
-        "message": "No ReportLab dependency issues!",
-        "approach": "HTML + CSS + Browser Print to PDF",
+        "status": "direct_pdf_generation",
+        "message": "Direct PDF creation - NO HTML conversion!",
+        "library": "FPDF",
+        "output": "Pure PDF files",
+        "html_conversion": False,
         "margins": {
-            "left": pdf_bot.left_margin,
-            "right": pdf_bot.right_margin,
-            "top": pdf_bot.top_margin,
-            "bottom": pdf_bot.bottom_margin
+            "left": "0.25 inches",
+            "right": "0.25 inches", 
+            "top": "0.4 inches",
+            "bottom": "0.4 inches"
         },
-        "font_size": f"{pdf_bot.font_size}px",
-        "developer": "TENG SAMBATH",
-        "guarantee": "100% working solution"
+        "developer": "TENG SAMBATH"
     }
 
 @fastapi_app.get("/health")
 async def health_check():
     return {
         "status": "healthy",
-        "approach": "html_to_pdf",
-        "dependencies_issues": "eliminated",
-        "reportlab_required": False,
-        "success_rate": "100%",
-        "custom_margins": True
+        "pdf_generation": "direct",
+        "html_involved": False,
+        "fpdf_available": PDF_AVAILABLE,
+        "conversion_required": False
     }
 
 # Function to run bot
 async def run_bot():
     """Run the bot with polling"""
     try:
-        logger.info("🚀 Starting Reliable PDF Bot by TENG SAMBATH...")
-        logger.info("✅ Approach: HTML + CSS (No ReportLab dependency)")
-        logger.info(f"📐 Margins: Left={pdf_bot.left_margin}, Right={pdf_bot.right_margin}")
-        logger.info(f"📝 Font: {pdf_bot.font_size}px")
-        logger.info("🎯 100% Reliable - No Dependencies Issues!")
+        logger.info("🚀 Starting DIRECT PDF Bot by TENG SAMBATH...")
+        logger.info("📄 Output: Pure PDF files (NO HTML conversion)")
+        logger.info(f"✅ FPDF: {'Available' if PDF_AVAILABLE else 'Not Available'}")
+        logger.info(f"📐 Margins: Left=0.25\", Right=0.25\"")
+        logger.info(f"📝 Font: {pdf_generator.font_size}px")
+        logger.info("🎯 Direct PDF generation - NO HTML involved!")
         
-        # Use polling (more reliable than webhooks)
+        # Use polling
         async with app:
             await app.initialize()
             await app.start()
