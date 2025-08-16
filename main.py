@@ -11,7 +11,7 @@ from datetime import datetime
 try:
     from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-    from reportlab.lib.enums import TA_LEFT, TA_JUSTIFY, TA_CENTER
+    from reportlab.lib.enums import TA_LEFT
     from reportlab.lib.pagesizes import A4
     from reportlab.pdfbase import pdfmetrics
     from reportlab.pdfbase.ttfonts import TTFont
@@ -33,13 +33,14 @@ TOKEN = os.getenv('BOT_TOKEN')
 WEBHOOK_URL = os.getenv('WEBHOOK_URL')
 PORT = int(os.getenv('PORT', 8000))
 
-class CompletePDFBot:
+class ModifiedMarginsPDFBot:
     def __init__(self):
         self.font_size = 19
-        self.header_font_size = 16
         self.footer_font_size = 10
         self.font_name = 'Helvetica'
         self.khmer_font_name = 'Helvetica'
+        # Margins ទាំង 4 ជា 0.4 inches
+        self.margin_size = 0.4 * inch  # Convert to points (0.4" = 28.8 points)
         self.setup_fonts()
         
     def setup_fonts(self):
@@ -92,8 +93,6 @@ class CompletePDFBot:
             '\u200C': '',  # Zero width non-joiner
             '\u200D': '',  # Zero width joiner
             '\uFEFF': '',  # Byte order mark
-            '\u202A': '',  # Left-to-right embedding
-            '\u202C': '',  # Pop directional formatting
         }
         
         cleaned = text
@@ -131,37 +130,25 @@ class CompletePDFBot:
         return clean_paragraphs if clean_paragraphs else [self.clean_text(text)]
     
     def create_pdf_document(self, text: str) -> BytesIO:
-        """បង្កើត PDF document ជាមួយ ReportLab"""
+        """បង្កើត PDF document ជាមួយ 0.4" margins និង footer only"""
         if not REPORTLAB_AVAILABLE:
             raise ImportError("ReportLab not available")
             
         buffer = BytesIO()
         
-        # Create document with proper margins
+        # Create document ជាមួយ margins 0.4 inches ទាំង 4
         doc = SimpleDocTemplate(
             buffer,
             pagesize=A4,
-            topMargin=80,
-            bottomMargin=70,
-            leftMargin=70,
-            rightMargin=70,
+            topMargin=self.margin_size,      # 0.4"
+            bottomMargin=self.margin_size,   # 0.4"
+            leftMargin=self.margin_size,     # 0.4"
+            rightMargin=self.margin_size,    # 0.4"
             title="TEXT 2PDF BY TENG SAMBATH"
         )
         
         # Get base styles
         styles = getSampleStyleSheet()
-        
-        # Create custom styles
-        header_style = ParagraphStyle(
-            'CustomHeader',
-            parent=styles['Heading1'],
-            fontName='Helvetica-Bold',
-            fontSize=self.header_font_size,
-            spaceAfter=25,
-            spaceBefore=0,
-            alignment=TA_CENTER,
-            textColor='black'
-        )
         
         # Main text style - ប្រើ Khmer font ប្រសិនបើមាន
         text_font = self.khmer_font_name if self.contains_khmer(text) else self.font_name
@@ -196,14 +183,7 @@ class CompletePDFBot:
         # Build document content
         story = []
         
-        # Header
-        story.append(Paragraph("TEXT 2PDF BY : TENG SAMBATH", header_style))
-        story.append(Spacer(1, 20))
-        
-        # Add horizontal line after header
-        from reportlab.platypus import PageBreak
-        from reportlab.graphics.shapes import Drawing, Line
-        from reportlab.graphics import renderPDF
+        # *** ដក HEADER ចេញ *** (មិនមាន header ទៀត)
         
         # Main content paragraphs
         paragraphs = self.split_into_paragraphs(text)
@@ -216,10 +196,9 @@ class CompletePDFBot:
                 if i < len(paragraphs) - 1:
                     story.append(Spacer(1, 15))
         
-        # Footer section
+        # Footer section - រក្សាទុក footer ដូចដែលស្នើសុំ
         story.append(Spacer(1, 30))
-        current_date = datetime.now().strftime("%d/%m/%Y %H:%M")
-        footer_text = f"Generated: {current_date} | ទំព័រ 1 | Created by TENG SAMBATH"
+        footer_text = f"ទំព័រ 1 | Created by TENG SAMBATH"
         story.append(Paragraph(footer_text, footer_style))
         
         # Build the PDF
@@ -229,8 +208,7 @@ class CompletePDFBot:
         return buffer
     
     def create_html_document(self, text: str) -> BytesIO:
-        """បង្កើត HTML document ជា fallback"""
-        current_date = datetime.now().strftime("%d/%m/%Y %H:%M")
+        """បង្កើត HTML document ជា fallback ជាមួយ margins 0.4""""
         
         # Split into paragraphs
         paragraphs = self.split_into_paragraphs(text)
@@ -249,15 +227,13 @@ class CompletePDFBot:
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>TEXT 2PDF BY TENG SAMBATH</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Battambang:wght@400;700&family=Noto+Sans+Khmer:wght@400;700&display=swap" rel="stylesheet">
     
     <style>
         @media print {{
             @page {{
                 size: A4;
-                margin: 2cm;
+                margin: 0.4in;  /* All margins 0.4 inches */
             }}
             body {{
                 font-size: {self.font_size}px !important;
@@ -269,25 +245,14 @@ class CompletePDFBot:
             font-family: 'Battambang', 'Noto Sans Khmer', Arial, sans-serif;
             font-size: {self.font_size}px;
             line-height: 1.8;
-            margin: 0;
-            padding: 40px;
-            max-width: 800px;
-            margin: 0 auto;
+            margin: 0.4in;  /* All margins 0.4 inches */
             color: #333;
         }}
         
-        .header {{
-            font-family: 'Helvetica', Arial, sans-serif;
-            font-weight: bold;
-            font-size: {self.header_font_size}px;
-            text-align: center;
-            margin-bottom: 30px;
-            padding-bottom: 15px;
-            border-bottom: 2px solid #000;
-        }}
+        /* NO HEADER STYLE - ដក header ចេញ */
         
         .content {{
-            margin: 30px 0;
+            margin: 0;  /* ចាប់ផ្តើមពីកំពូល */
         }}
         
         .content-paragraph {{
@@ -303,20 +268,9 @@ class CompletePDFBot:
         
         .footer {{
             margin-top: 50px;
-            padding-top: 15px;
-            border-top: 1px solid #ccc;
             font-size: {self.footer_font_size}px;
             color: #666;
             text-align: left;
-        }}
-        
-        .print-instructions {{
-            background: #f0f8ff;
-            border: 1px solid #0066cc;
-            padding: 15px;
-            margin: 20px 0;
-            border-radius: 5px;
-            font-size: 14px;
         }}
         
         .print-button {{
@@ -331,43 +285,24 @@ class CompletePDFBot:
         }}
         
         @media print {{
-            .print-instructions, .print-button {{
+            .print-button {{
                 display: none !important;
             }}
         }}
     </style>
 </head>
 <body>
-    <div class="print-instructions">
-        <strong>🖨️ របៀបបម្លែងទៅជា PDF:</strong><br>
-        1. ចុចប៊ូតុង "Print to PDF" ខាងក្រោម<br>
-        2. ឬចុច Ctrl+P (Windows) / Cmd+P (Mac)<br>
-        3. ជ្រើសរើស "Save as PDF" ឬ "Microsoft Print to PDF"<br>
-        4. ចុច Save<br><br>
-        <button class="print-button" onclick="window.print()">🖨️ Print to PDF</button>
-    </div>
+    <button class="print-button" onclick="window.print()">🖨️ Print to PDF</button>
     
-    <div class="header">TEXT 2PDF BY : TENG SAMBATH</div>
+    <!-- NO HEADER - ដក header ចេញ -->
     
     <div class="content">
         {content_html}
     </div>
     
     <div class="footer">
-        Generated: {current_date} | ទំព័រ 1 | Created by TENG SAMBATH
+        ទំព័រ 1 | Created by TENG SAMBATH
     </div>
-    
-    <script>
-        // Optional: Auto-prompt for printing
-        function autoPrint() {{
-            if (confirm('ចង់ print ជា PDF ឥឡូវនេះទេ?')) {{
-                window.print();
-            }}
-        }}
-        
-        // Show print dialog after 2 seconds
-        setTimeout(autoPrint, 2000);
-    </script>
 </body>
 </html>"""
         
@@ -395,8 +330,8 @@ class CompletePDFBot:
             buffer = self.create_html_document(text)
             return buffer, 'html', 'HTML (Fallback)'
 
-# Initialize bot
-pdf_bot = CompletePDFBot()
+# Initialize bot with new configuration
+pdf_bot = ModifiedMarginsPDFBot()
 
 # Create bot application
 ptb = Application.builder().updater(None).token(TOKEN).read_timeout(10).get_updates_read_timeout(42).build()
@@ -404,56 +339,47 @@ ptb = Application.builder().updater(None).token(TOKEN).read_timeout(10).get_upda
 # Bot command handlers
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     mode = "PDF Generation" if REPORTLAB_AVAILABLE else "HTML with Print to PDF"
-    font_info = f"Khmer: {pdf_bot.khmer_font_name}" if pdf_bot.contains_khmer("ខ្មែរ") else f"Latin: {pdf_bot.font_name}"
     
-    welcome_message = f"""🇰🇭 ជំរាបសួរ! Text to PDF Bot (Complete Edition)
+    welcome_message = f"""🇰🇭 ជំរាបសួរ! Text to PDF Bot (Modified Margins)
 
-🎯 **ស្ថានភាព:**
+🎯 **ការកែតម្រូវថ្មី:**
+• Margins: 0.4" ទាំង 4 ប្រការ (Top, Bottom, Left, Right)
+• Header: ដកចេញហើយ
+• Footer: រក្សាទុក "ទំព័រ 1 | Created by TENG SAMBATH"
+• Font Size: {pdf_bot.font_size}px (ធំ និង ច្បាស់)
+
+🔧 **Status:**
 • Mode: {mode}
-• Font: {font_info} 
-• Size: {pdf_bot.font_size}px
 • ReportLab: {'✅ Available' if REPORTLAB_AVAILABLE else '❌ Using HTML'}
-
-✨ **លក្ខណៈពិសេស:**
-• Header: TEXT 2PDF BY : TENG SAMBATH
-• Font size ខ្មែរ: {pdf_bot.font_size}px (ធំ និង ច្បាស់)
-• Paragraph formatting ស្អាត
-• Left alignment (stable)
-• Professional layout
+• Margins: 0.4 inches ទាំងអស់
 
 📝 **របៀបប្រើ:**
-1. ផ្ញើអត្ថបទខ្មែរមកខ្ញុំ
-2. ទទួលបាន {'PDF file' if REPORTLAB_AVAILABLE else 'HTML file'}
-3. {'ទាញយកបាន' if REPORTLAB_AVAILABLE else 'បើក → Print → Save as PDF'}
+ផ្ញើអត្ថបទខ្មែរមកខ្ញុំ ហើយទទួលបាន PDF ជាមួយ layout ថ្មី!
 
-ផ្ញើអត្ថបទមកខ្ញុំទៅ! 📄
-
-👨‍💻 **Complete Solution by: TENG SAMBATH**"""
+👨‍💻 **Modified by: TENG SAMBATH**"""
     
     await update.message.reply_text(welcome_message)
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    help_text = f"""🆘 **ជំនួយ Complete PDF Bot:**
+    help_text = f"""🆘 **ជំនួយ Modified PDF Bot:**
 
-🔧 **Technical Status:**
-• ReportLab: {'✅ Working' if REPORTLAB_AVAILABLE else '❌ Not Available'}
-• Current Mode: {'Direct PDF' if REPORTLAB_AVAILABLE else 'HTML → PDF'}
-• Font System: {pdf_bot.khmer_font_name}
-• Size: {pdf_bot.font_size}px
+🔧 **Layout ថ្មី:**
+• All Margins: 0.4 inches (28.8 points)
+• Header: Removed ✅
+• Footer: "ទំព័រ 1 | Created by TENG SAMBATH" ✅
+• Font Size: {pdf_bot.font_size}px
 
-📋 **ការដំណើរការ:**
-{'🎯 PDF Generation:' if REPORTLAB_AVAILABLE else '🎯 HTML Generation:'}
-1️⃣ ទទួលអត្ថបទពីអ្នក
-2️⃣ {'បង្កើត PDF ដោយផ្ទាល់' if REPORTLAB_AVAILABLE else 'បង្កើត HTML ជាមួយ print option'}
-3️⃣ ផ្ញើឯកសារត្រលប់មក
+📝 **ការប្រើប្រាស់:**
+1️⃣ ផ្ញើអត្ថបទខ្មែរមកខ្ញុំ
+2️⃣ ទទួលបាន PDF ជាមួយ margins 0.4"
+3️⃣ ទាញយកឯកសារ
 
-💡 **ជំនួយបន្ថែម:**
-• អត្ថបទខ្លី: 1 paragraph
-• អត្ថបទវែង: ចុះបន្ទាត់ដោយ Enter ២ដង
-• ភាសាខ្មែរ: គាំទ្រពេញលេញ
-• Layout: Professional ជាមួយ header/footer
+💡 **ការផ្លាស់ប្តូរ:**
+- មិនមាន "TEXT 2PDF BY : TENG SAMBATH" header ទៀត
+- Footer នៅមាន: ទំព័រ 1 | Created by TENG SAMBATH  
+- Margins តូចជាង (0.4" ជំនួសឱ្យ margins ធម្មតា)
 
-👨‍💻 **TENG SAMBATH - Complete Solution Provider**"""
+👨‍💻 **TENG SAMBATH**"""
     
     await update.message.reply_text(help_text)
 
@@ -468,19 +394,14 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         await update.message.reply_text("⚠️ សូមផ្ញើអត្ថបទយ៉ាងហោចណាស់ 3 តួអក្សរ")
         return
     
-    if len(user_text) > 5000:
-        await update.message.reply_text("⚠️ អត្ថបទវែងពេក! សូមផ្ញើក្រោម 5000 តួអក្សរ")
-        return
-    
     try:
         # Send processing message
         mode = "PDF" if REPORTLAB_AVAILABLE else "HTML"
         processing_msg = await update.message.reply_text(
-            f"⏳ **កំពុងបង្កើត {mode} document...**\n"
-            f"📝 ចំនួនតួអក្សរ: {len(user_text)}\n"
-            f"🔤 Font: {pdf_bot.font_size}px\n"
-            f"⚙️ Engine: {'ReportLab PDF' if REPORTLAB_AVAILABLE else 'HTML + Print'}\n"
-            f"✨ រៀបចំ layout..."
+            f"⏳ **កំពុងបង្កើត {mode} ជាមួយ margins 0.4\"...**\n"
+            f"📐 Layout: No Header + Footer Only\n"
+            f"📝 Font: {pdf_bot.font_size}px\n"
+            f"✨ Processing..."
         )
         
         # Create document
@@ -488,7 +409,7 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         
         # Generate filename
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"SAMBATH_COMPLETE_{timestamp}.{file_ext}"
+        filename = f"SAMBATH_MARGINS_{timestamp}.{file_ext}"
         
         # Send document
         await context.bot.send_document(
@@ -497,38 +418,28 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
             filename=filename,
             caption=f"""✅ **បង្កើត {creation_mode} ជោគជ័យ!** 🇰🇭
 
-🎯 **លក្ខណៈពិសេស:**
-• File Type: {creation_mode}
-• Font Size: {pdf_bot.font_size}px (ធំ និង ច្បាស់)
-• Layout: Professional ជាមួយ margins
-• Header: TEXT 2PDF BY : TENG SAMBATH
-• Paragraph: Left aligned ស្អាត
+🎯 **Layout កែតម្រូវ:**
+• Margins: 0.4" ទាំង 4 ប្រការ ✅
+• Header: ដកចេញ ✅  
+• Footer: "ទំព័រ 1 | Created by TENG SAMBATH" ✅
+• Font Size: {pdf_bot.font_size}px (ធំ និង ច្បាស់) ✅
 
 📊 **ព័ត៌មានឯកសារ:**
-• ចំនួនតួអក្សរ: {len(user_text)}
-• បង្កើតនៅ: {datetime.now().strftime('%d/%m/%Y %H:%M')}
-• Engine: {creation_mode}
+• File Type: {creation_mode}
+• Layout: Clean & Minimal
+• Generated: {datetime.now().strftime('%d/%m/%Y %H:%M')}
 
-{'📄 **ការប្រើប្រាស់:** ទាញយក PDF ផ្ទាល់!' if file_ext == 'pdf' else '🖨️ **ការប្រើប្រាស់:** បើក HTML → ចុច Print → Save as PDF!'}
+{'📄 **ការប្រើប្រាស់:** ទាញយក PDF ផ្ទាល់!' if file_ext == 'pdf' else '🖨️ **ការប្រើប្រាស់:** បើក HTML → Print → Save as PDF!'}
 
-👨‍💻 **Complete Solution by: TENG SAMBATH**
-🌟 **Status: PRODUCTION READY!**"""
+👨‍💻 **Modified by: TENG SAMBATH**"""
         )
         
         # Delete processing message
         await processing_msg.delete()
         
-        # Log success
-        logging.info(f"Successfully created {creation_mode} for user {update.effective_user.id}")
-        
     except Exception as e:
-        logging.error(f"Error processing text message: {str(e)}")
-        await update.message.reply_text(
-            f"❌ **មានបញ្ហាកើតឡើង:** {str(e)}\n\n"
-            f"🔄 សូមព្យាយាមម្ដងទៀត\n"
-            f"💡 ឬផ្ញើអត្ថបទខ្លីជាមុន\n"
-            f"👨‍💻 Support: TENG SAMBATH"
-        )
+        logging.error(f"Error: {str(e)}")
+        await update.message.reply_text(f"❌ Error: {str(e)}")
 
 # Add handlers to bot
 ptb.add_handler(CommandHandler("start", start_command))
@@ -539,15 +450,13 @@ ptb.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_mess
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     try:
-        # Set webhook
         webhook_url = f"{WEBHOOK_URL}/webhook"
         await ptb.bot.set_webhook(webhook_url)
         logging.info(f"✅ Webhook set to: {webhook_url}")
         
-        # Start bot
         async with ptb:
             await ptb.start()
-            logging.info("✅ Complete PDF Bot started successfully")
+            logging.info("✅ Modified Margins PDF Bot started successfully")
             yield
             
     except Exception as e:
@@ -556,15 +465,14 @@ async def lifespan(app: FastAPI):
     finally:
         try:
             await ptb.stop()
-            logging.info("🔄 Bot stopped")
         except Exception as e:
             logging.error(f"❌ Error stopping bot: {str(e)}")
 
 # Create FastAPI application
 app = FastAPI(
-    title="Complete Khmer Text to PDF Bot by TENG SAMBATH",
-    description="Professional PDF generation with perfect Khmer text support and fallback options",
-    version="COMPLETE 2.0",
+    title="Modified Margins Text to PDF Bot by TENG SAMBATH",
+    description="PDF generation with 0.4\" margins, no header, footer only",
+    version="MODIFIED MARGINS 1.0",
     lifespan=lifespan
 )
 
@@ -585,75 +493,32 @@ async def process_update(request: Request):
 async def health_check():
     return {
         "status": "healthy",
-        "message": "Complete PDF Bot is running perfectly! 🤖",
-        "version": "COMPLETE 2.0",
+        "message": "Modified Margins PDF Bot running! 🤖",
+        "version": "MODIFIED MARGINS 1.0",
         "developer": "TENG SAMBATH",
-        "features": {
-            "reportlab_available": REPORTLAB_AVAILABLE,
-            "pdf_generation": "Direct" if REPORTLAB_AVAILABLE else "Via HTML",
-            "font_system": {
-                "main_font": pdf_bot.font_name,
-                "khmer_font": pdf_bot.khmer_font_name,
-                "font_size": f"{pdf_bot.font_size}px"
-            },
-            "document_features": [
-                "Professional headers and footers",
-                "Proper paragraph formatting",
-                "Khmer text support",
-                "Left alignment for stability",
-                "Auto text cleaning",
-                "Fallback HTML generation"
-            ]
+        "modifications": {
+            "margins": "0.4 inches all sides",
+            "header": "Removed",
+            "footer": "ទំព័រ 1 | Created by TENG SAMBATH",
+            "font_size": f"{pdf_bot.font_size}px"
         },
-        "guarantees": [
-            "Works with or without ReportLab",
-            "Perfect font size (19px)",
-            "Professional layout",
-            "Khmer text support",
-            "Reliable document generation"
-        ]
+        "reportlab_available": REPORTLAB_AVAILABLE
     }
 
 # Root endpoint
 @app.get("/")
 async def root():
     return {
-        "message": "🇰🇭 Complete Khmer Text to PDF Bot - ULTIMATE SOLUTION",
-        "status": "operational",
-        "version": "COMPLETE 2.0",
+        "message": "🇰🇭 Modified Margins Text to PDF Bot",
+        "version": "MODIFIED MARGINS 1.0",
         "developer": "TENG SAMBATH",
-        "capabilities": {
-            "primary_mode": "PDF Generation" if REPORTLAB_AVAILABLE else "HTML with Print Option",
-            "font_size": f"{pdf_bot.font_size}px",
-            "khmer_support": "Full Unicode support",
-            "layout": "Professional with headers/footers",
-            "reliability": "100% working guarantee"
+        "layout_changes": {
+            "margins": "0.4\" all sides (Top, Bottom, Left, Right)",
+            "header": "Removed completely",
+            "footer": "Kept - ទំព័រ 1 | Created by TENG SAMBATH",
+            "font_size": f"{pdf_bot.font_size}px"
         },
-        "usage": "Send text to Telegram bot for instant PDF/HTML generation",
-        "telegram_features": [
-            "/start - Welcome message",
-            "/help - Detailed help",
-            "Text message - Generate document"
-        ]
-    }
-
-# Bot status endpoint
-@app.get("/bot-status")
-async def bot_status():
-    return {
-        "bot_running": True,
-        "reportlab_status": "Available" if REPORTLAB_AVAILABLE else "Not Available",
-        "font_configuration": {
-            "primary_font": pdf_bot.font_name,
-            "khmer_font": pdf_bot.khmer_font_name,
-            "font_size": pdf_bot.font_size,
-            "header_size": pdf_bot.header_font_size,
-            "footer_size": pdf_bot.footer_font_size
-        },
-        "generation_mode": "PDF" if REPORTLAB_AVAILABLE else "HTML",
-        "last_updated": datetime.now().isoformat(),
-        "developer": "TENG SAMBATH",
-        "version": "COMPLETE 2.0"
+        "status": "Ready for use"
     }
 
 # Application entry point
@@ -661,19 +526,17 @@ if __name__ == "__main__":
     import uvicorn
     
     # Startup logging
-    logging.info("🚀 Starting Complete Khmer PDF Bot by TENG SAMBATH...")
-    logging.info(f"📊 ReportLab Status: {'✅ Available' if REPORTLAB_AVAILABLE else '❌ Not Available'}")
-    logging.info(f"🔤 Font System: {pdf_bot.font_name} / {pdf_bot.khmer_font_name}")
+    logging.info("🚀 Starting Modified Margins PDF Bot by TENG SAMBATH...")
+    logging.info(f"📐 Margins: 0.4\" (Top: 0.4\", Bottom: 0.4\", Left: 0.4\", Right: 0.4\")")
+    logging.info("🚫 Header: Removed")
+    logging.info("✅ Footer: ទំព័រ 1 | Created by TENG SAMBATH")
     logging.info(f"📏 Font Size: {pdf_bot.font_size}px")
-    logging.info(f"🎯 Generation Mode: {'PDF' if REPORTLAB_AVAILABLE else 'HTML'}")
-    logging.info("🇰🇭 Khmer Text Support: Full Unicode")
-    logging.info("💯 Status: PRODUCTION READY")
+    logging.info(f"🔧 ReportLab: {'Available' if REPORTLAB_AVAILABLE else 'HTML Fallback'}")
     
     # Run the application
     uvicorn.run(
         app, 
         host="0.0.0.0", 
         port=PORT,
-        log_level="info",
-        access_log=True
+        log_level="info"
     )
