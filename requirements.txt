@@ -3,5 +3,6 @@ fastapi==0.104.1
 uvicorn[standard]==0.24.0
 python-dotenv==1.0.0
 requests==2.31.0
-requests==2.31.0
 weasyprint==62.3
+python-telegram-bot==20.7
+fpdf2==2.7.6
