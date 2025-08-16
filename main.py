@@ -60,7 +60,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         {content}
     </div>
     <div class="footer">
-        ទំព័រ 1 | បង្កើតដោយ TENG SAMBATH
+Bot Text2PDF | Teng Sambath
     </div>
 </body>
 </html>"""
@@ -71,10 +71,10 @@ app = Application.builder().token(TOKEN).build()
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """ពេលអ្នកចាប់ផ្តើម (/start)"""
     await update.message.reply_text(
-        "🇰🇭 BOT បំលែងអត្ថបទទៅជា PDF ដោយស្វ័យប្រវត្តិ\n\n"
-        "📝 របៀបប្រើប្រាស់: ផ្ញើអត្ថបទរបសអ្នកមក Bot នេះ បន្ទាប់ពីនោះ Bot នឹងផ្ញើ PDF ត្រឡប់ទៅភ្លាមៗ!\n"
-        "• ពុម្ពអក្សរ ៖  ខ្មែរបាត់ដំបង\n\n"
-        "• ទំនាក់ទំងខ្ញុំ ៖ https://t.me/ts_4699"
+        "🇰🇭 BOT បំលែងអត្ថបទទៅជា PDF 🇰🇭 \n\n"
+        "📝 របៀបប្រើប្រាស់: ផ្ញើអត្ថបទរបសអ្នកមកកាន់ Bot \n"
+        "បន្ទាប់ពីនោះ Bot នឹងផ្ញើ PDF ត្រឡប់ទៅភ្លាមៗ!\n\n"
+        "• សូមរីករាយ! ក្នុងការប្រើប្រាស់ ៖ https://t.me/ts_4699"
     )
 
 async def convert_text_to_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -115,8 +115,7 @@ async def convert_text_to_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE
             document=pdf_buffer,
             filename=filename,
             caption="✅ **សូមអបអរ អត្ថបទរបស់អ្នករួចរាល់!**\n\n"
-                    "💡 ប្រសិនបើបញ្ហានៅតែកើត សូមទំនាក់ទំនងមកកាន់ខ្ញុំ\n\n"
-                    "👨‍💻 **បង្កើតដោយ: បង សម្បត្តិ"
+                    "• សូមរីករាយ! ក្នុងការប្រើប្រាស់ ៖ https://t.me/ts_4699"
         )
         
         # កត់ត្រា Success
