@@ -22,8 +22,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     <title>PDF Khmer by TENG SAMBATH</title>
     <style>
         @page {{
-            margin-left: 0.35in;
-            margin-right: 0.35in;
+            margin-left: 0.40in;
+            margin-right: 0.40in;
             margin-top: 0.4in;
             margin-bottom: 0.4in;
         }}
