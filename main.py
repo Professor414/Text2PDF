@@ -48,32 +48,37 @@ app = Application.builder().token(TOKEN).build()
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "🇰🇭 PDF Khmer Bot - Auto PDF Shaping (No browser/Print Button)\n\n"
-        "• នេះជាប្រព័ន្ធ convert សំណួរទៅ PDF Khmer shaping ស្អាត\n"
-        "• Bot នឹងផ្ញើ PDF file ត្រឡប់ជាស្វ័យប្រវត្តិ (គ្មាន HTML, មិនចាំបាច់ print browser)\n"
-        "• Margins: 0.25in / 0.4in | Fonts: Battambang/Noto Sans Khmer/KhmerOS"
+        "🇰🇭 PDF Khmer Bot - Auto PDF Shaping (ស្រេច, មិនចាំបាច់ print/browser)\n\n"
+        "• ផ្ញើអត្ថបទ, bot will auto-create PDF (margins 0.25/0.4 in, shaping perfect Khmer)\n"
+        "• PDF file sent directly, no HTML/manual steps needed\n"
+        "• Footer: ទំព័រ 1 | Created by TENG SAMBATH"
     )
 
 async def convert_and_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text.strip()
-    if text.startswith("/"):
-        return
-    # ស្វែងរកកំណត់អត្ថបទ (មិនមាន text limit)
-    paragraphs = ['<p>' + line + '</p>' for line in text.replace('\r','').split('\n') if line.strip()]
-    html = HTML_TMPL.format(body='\n'.join(paragraphs))
-
-    # បម្លែង HTML -> PDF (no browser interaction)
-    pdf_buffer = BytesIO()
-    HTML(string=html).write_pdf(pdf_buffer)
-    pdf_buffer.seek(0)
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"KHMER_AUTO_PDF_{timestamp}.pdf"
-    await context.bot.send_document(
-        chat_id=update.effective_chat.id,
-        document=pdf_buffer,
-        filename=filename,
-        caption="✅ PDF shaping ស្អាត! មិនចាំបាច់ print browser, ទទួល PDF ភ្លាមៗ (bot auto convert)"
-    )
+    try:
+        text = update.message.text.strip()
+        if text.startswith("/"):
+            return
+        paragraphs = ['<p>' + line + '</p>' for line in text.replace('\r','').split('\n') if line.strip()]
+        html = HTML_TMPL.format(body='\n'.join(paragraphs))
+        pdf_buffer = BytesIO()
+        HTML(string=html).write_pdf(pdf_buffer)
+        pdf_buffer.seek(0)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"KHMER_AUTO_PDF_{timestamp}.pdf"
+        await context.bot.send_document(
+            chat_id=update.effective_chat.id,
+            document=pdf_buffer,
+            filename=filename,
+            caption="✅ PDF shaping ស្អាត! ទទួល PDF ត្រឡប់មកភ្លាមៗ (bot auto convert)"
+        )
+    except Exception as e:
+        # Error handler: log + tell user
+        import traceback
+        logging.error("PDF convert failed: %s\n%s", str(e), traceback.format_exc())
+        await update.message.reply_text(
+            f"❌ មានបញ្ហាក្នុងការបំលែងទៅ PDF!\n\nលម្អិត: {e}"
+        )
 
 app.add_handler(CommandHandler("start", start))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, convert_and_reply))
