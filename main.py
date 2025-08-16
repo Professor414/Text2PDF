@@ -6,15 +6,15 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from weasyprint import HTML
 
-# Configure logging
+# កំណត់ Logging
 logging.basicConfig(level=logging.INFO)
 
-# Environment variable
+# Variable បរិស្ថាន
 TOKEN = os.getenv("BOT_TOKEN")
 if not TOKEN:
-    raise RuntimeError("Please set BOT_TOKEN as environment variable.")
+    raise RuntimeError("សូមកំណត់ BOT_TOKEN ជា environment variable មុនចាប់ផ្តើម។")
 
-# HTML Template (Updated formatting)
+# HTML Template (Khmer PDF)
 HTML_TEMPLATE = """<!DOCTYPE html>
 <html lang="km">
 <head>
@@ -22,8 +22,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     <title>PDF Khmer by TENG SAMBATH</title>
     <style>
         @page {{
-            margin-left: 0.4in;
-            margin-right: 0.4in;
+            margin-left: 0.35in;
+            margin-right: 0.35in;
             margin-top: 0.4in;
             margin-bottom: 0.4in;
         }}
@@ -60,98 +60,103 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         {content}
     </div>
     <div class="footer">
-     TEXT2PDF by : TENG SAMBATH
+        ទំព័រ 1 | បង្កើតដោយ TENG SAMBATH
     </div>
 </body>
 </html>"""
 
-# Create application
+# បង្កើត Bot Application
 app = Application.builder().token(TOKEN).build()
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Start command handler"""
+    """ពេលអ្នកចាប់ផ្តើម (/start)"""
     await update.message.reply_text(
-        "🇰🇭 Text2PDF | Teng Sambath \n\n"
-        "👨‍💻 Text2PDF Created By : Teng Sambath"
+        "🇰🇭 **PDF Khmer Bot** - បំលែងអត្ថបទទៅ PDF ស្វ័យប្រវត្តិ\n\n"
+        "✅ **មុខងារ:**\n"
+        "• បំលែងអត្ថបទទៅ PDF ដោយមិនចាំបាច់ប្រើ HTML ឬ Browser\n"
+        "• ពុម្ពអក្សរ Khmer ត្រឹមត្រូវ ១០០%\n"
+        "• ស៊ុម (Margins): ឆ្វេង/ស្តាំ 0.35\", លើ/ក្រោម 0.4\"\n"
+        "• ពុម្ពអក្សរ: 19px Battambang/Noto Sans Khmer\n"
+        "• Footer: ទំព័រ 1 | បង្កើតដោយ TENG SAMBATH\n\n"
+        "📝 **របៀបប្រើប្រាស់:** ផ្ញើអត្ថបទណាមួយ មក Bot នេះ បន្ទាប់ពីនោះ Bot នឹងផ្ញើ PDF ត្រឡប់ទៅភ្លាមៗ!\n\n"
+        "👨‍💻 **បង្កើតដោយ: TENG SAMBATH**"
     )
 
 async def convert_text_to_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Convert text to PDF and send back"""
+    """បំលែងអត្ថបទទៅ PDF ហើយផ្ញើត្រឡប់ទៅអ្នកប្រើប្រាស់"""
     try:
-        # Get user text
+        # ទទួលអត្ថបទពីអ្នកប្រើ
         user_text = update.message.text.strip()
         
-        # Skip commands
+        # មិនអនុវត្តលើ Command
         if user_text.startswith('/'):
             return
             
-        # Process text into HTML paragraphs
+        # បំបែកអត្ថបទជាបន្ទាត់ <p>
         paragraphs = []
         lines = user_text.replace('\r\n', '\n').replace('\r', '\n').split('\n')
         
         for line in lines:
             line = line.strip()
-            if line:  # Only add non-empty lines
+            if line:  # បន្ថែមតែបន្ទាត់ដែលមានអត្ថបទ
                 paragraphs.append(f"<p>{line}</p>")
         
-        # Create HTML content
+        # បង្កើត HTML
         html_content = '\n        '.join(paragraphs)
         final_html = HTML_TEMPLATE.format(content=html_content)
         
-        # Generate PDF using WeasyPrint
+        # បង្កើត PDF ដោយប្រើ WeasyPrint
         pdf_buffer = BytesIO()
         HTML(string=final_html).write_pdf(pdf_buffer)
         pdf_buffer.seek(0)
         
-        # Create filename with timestamp
+        # កំណត់ឈ្មោះ File
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"KHMER_PDF_{timestamp}.pdf"
         
-        # Send PDF to user
+        # ផ្ញើ PDF ត្រឡប់ទៅអ្នកប្រើ
         await context.bot.send_document(
             chat_id=update.effective_chat.id,
             document=pdf_buffer,
             filename=filename,
-            caption="✅ PDF បង្កើតជោគជ័យ!\n\n"
-                   "👨‍💻 Text2PDF Created By : Teng Sambath"
+            caption="✅ **សូមអបអរ អត្ថបទរបស់អ្នករួចរាល់!**\n\n"
+                    "📐 ស៊ុម (Margins): ឆ្វេង/ស្តាំ 0.35\", លើ/ក្រោម 0.4\"\n"
+                    "📝 ពុម្ពអក្សរ: 19px Khmer មានរាងអក្សរត្រឹមត្រូវ\n"
+                    "🎯 រួចរាល់ ប្រើបានភ្លាមៗ មិនចាំបាច់បម្លែងបន្ថែម!\n\n"
+                    "👨‍💻 **បង្កើតដោយ: TENG SAMBATH**"
         )
         
-        # Log success
-        logging.info(f"PDF created successfully for user {update.effective_user.id}")
+        # កត់ត្រា Success
+        logging.info(f"PDF បង្កើតជោគជ័យសម្រាប់អ្នកប្រើ {update.effective_user.id}")
         
     except Exception as e:
-        # Comprehensive error handling
         import traceback
         error_details = traceback.format_exc()
+        logging.error(f"បង្កើត PDF បរាជ័យ: {str(e)}\n{error_details}")
         
-        # Log the error
-        logging.error(f"PDF generation failed: {str(e)}\n{error_details}")
-        
-        # Send user-friendly error message
         await update.message.reply_text(
             f"❌ **មានបញ្ហាក្នុងការបង្កើត PDF!**\n\n"
-            f"**Error:** {str(e)}\n\n"
-            f"🔄 សូមព្យាយាមម្តងទៀត ឬ ផ្ញើអត្ថបទខ្លីៗជាមុន\n"
-            f"💡 ប្រសិនបើបញ្ហានៅតែកើត សូមទាក់ទង admin\n\n"
-            f"👨‍💻 **Support: TENG SAMBATH**"
+            f"**កំហុស:** {str(e)}\n\n"
+            f"🔄 សូមព្យាយាមម្ដងទៀត ឬ ផ្ញើអត្ថបទខ្លីជាមុន\n"
+            f"💡 ប្រសិនបើបញ្ហានៅតែកើត សូមទាក់ទង Admin\n\n"
+            f"👨‍💻 **ជំនួយ: TENG SAMBATH**"
         )
 
-# Add handlers
+# Add Handlers
 app.add_handler(CommandHandler("start", start_command))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, convert_text_to_pdf))
 
-# Main function
+# Main Run
 if __name__ == "__main__":
     try:
-        logging.info("🚀 Starting PDF Khmer Bot by TENG SAMBATH...")
+        logging.info("🚀 កំពុងចាប់ផ្តើម PDF Khmer Bot by TENG SAMBATH...")
         logging.info("✅ WeasyPrint PDF generation ready")
         logging.info("📐 Margins: Left/Right 0.35\", Top/Bottom 0.4\"")
         logging.info("📝 Font: 19px Khmer fonts")
         logging.info("🎯 Auto PDF conversion enabled")
         
-        # Run bot with polling
         app.run_polling()
         
     except Exception as e:
-        logging.error(f"Failed to start bot: {e}")
+        logging.error(f"មិនអាចចាប់ផ្តើម Bot បានទេ: {e}")
         raise
