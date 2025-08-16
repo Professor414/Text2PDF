@@ -71,15 +71,10 @@ app = Application.builder().token(TOKEN).build()
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """ពេលអ្នកចាប់ផ្តើម (/start)"""
     await update.message.reply_text(
-        "🇰🇭 **PDF Khmer Bot** - បំលែងអត្ថបទទៅ PDF ស្វ័យប្រវត្តិ\n\n"
-        "✅ **មុខងារ:**\n"
-        "• បំលែងអត្ថបទទៅ PDF ដោយមិនចាំបាច់ប្រើ HTML ឬ Browser\n"
-        "• ពុម្ពអក្សរ Khmer ត្រឹមត្រូវ ១០០%\n"
-        "• ស៊ុម (Margins): ឆ្វេង/ស្តាំ 0.35\", លើ/ក្រោម 0.4\"\n"
-        "• ពុម្ពអក្សរ: 19px Battambang/Noto Sans Khmer\n"
-        "• Footer: ទំព័រ 1 | បង្កើតដោយ TENG SAMBATH\n\n"
-        "📝 **របៀបប្រើប្រាស់:** ផ្ញើអត្ថបទណាមួយ មក Bot នេះ បន្ទាប់ពីនោះ Bot នឹងផ្ញើ PDF ត្រឡប់ទៅភ្លាមៗ!\n\n"
-        "👨‍💻 **បង្កើតដោយ: TENG SAMBATH**"
+        "🇰🇭 BOT បំលែងអត្ថបទទៅជា PDF ដោយស្វ័យប្រវត្តិ\n\n"
+        "📝 របៀបប្រើប្រាស់: ផ្ញើអត្ថបទរបសអ្នកមក Bot នេះ បន្ទាប់ពីនោះ Bot នឹងផ្ញើ PDF ត្រឡប់ទៅភ្លាមៗ!\n"
+        "• ពុម្ពអក្សរ ៖  ខ្មែរបាត់ដំបង\n\n"
+        "• ទំនាក់ទំងខ្ញុំ ៖ https://t.me/ts_4699"
     )
 
 async def convert_text_to_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -120,10 +115,8 @@ async def convert_text_to_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE
             document=pdf_buffer,
             filename=filename,
             caption="✅ **សូមអបអរ អត្ថបទរបស់អ្នករួចរាល់!**\n\n"
-                    "📐 ស៊ុម (Margins): ឆ្វេង/ស្តាំ 0.35\", លើ/ក្រោម 0.4\"\n"
-                    "📝 ពុម្ពអក្សរ: 19px Khmer មានរាងអក្សរត្រឹមត្រូវ\n"
-                    "🎯 រួចរាល់ ប្រើបានភ្លាមៗ មិនចាំបាច់បម្លែងបន្ថែម!\n\n"
-                    "👨‍💻 **បង្កើតដោយ: TENG SAMBATH**"
+                    "💡 ប្រសិនបើបញ្ហានៅតែកើត សូមទំនាក់ទំនងមកកាន់ខ្ញុំ\n\n"
+                    "👨‍💻 **បង្កើតដោយ: បង សម្បត្តិ"
         )
         
         # កត់ត្រា Success
@@ -138,7 +131,7 @@ async def convert_text_to_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE
             f"❌ **មានបញ្ហាក្នុងការបង្កើត PDF!**\n\n"
             f"**កំហុស:** {str(e)}\n\n"
             f"🔄 សូមព្យាយាមម្ដងទៀត ឬ ផ្ញើអត្ថបទខ្លីជាមុន\n"
-            f"💡 ប្រសិនបើបញ្ហានៅតែកើត សូមទាក់ទង Admin\n\n"
+            f"💡 ប្រសិនបើបញ្ហានៅតែកើត សូមទំនាក់ទំនងមកកាន់ខ្ញ\n\n"
             f"👨‍💻 **ជំនួយ: TENG SAMBATH**"
         )
 
