@@ -35,9 +35,9 @@ if not TOKEN:
 
 class DirectPDFBot:
     def __init__(self):
-        self.font_size = 19
+        self.font_size = 20
         self.footer_font_size = 10
-        self.margin = 0.4 * inch  # 0.4 inches = 28.8 points
+        self.margin = 0.25 * inch  # 0.25 inches = 28.8 points
         self.line_height = self.font_size + 8  # 27 points
         self.setup_fonts()
         
