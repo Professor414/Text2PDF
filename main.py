@@ -16,8 +16,8 @@ TOKEN = os.getenv("BOT_TOKEN")
 if not TOKEN:
     raise RuntimeError("សូមកំណត់ BOT_TOKEN ជា environment variable មុនចាប់ផ្តើម។")
 
-# ទំហំអតិបរមា PDF (byte) — 10MB
-MAX_PDF_BYTES = 10 * 1024 * 1024  # 10MB
+# ទំហំអតិបរមា PDF (byte) — 20MB
+MAX_PDF_BYTES = 20 * 1024 * 1024  # 20MB
 
 # --------------------- HTML Template (Khmer PDF) ---------------------
 # រក្សាទ្រង់ទ្រាយដើម ប៉ុន្តែប្រើ pre-wrap ដើម្បីរក្សា newline/space ដើម
@@ -81,7 +81,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     lines = [
         "✅ ចាប់ផ្តើមប្រមូលអត្ថបទ!",
-        "• ផ្ញើអត្ថបទជាបន្តបន្ទាប់ (Telegram អាចបែកជាច្រើនសារ).",
+        "• ផ្ញើអត្ថបទ របស់អ្នកទាំងអស់មកកាន់ខ្ញុំ ",
         "• ពេលចប់ សរសេរ /done ដើម្បីបំលែងជា PDF មួយ (អតិបរមា 10MB).",
     ]
     if title:
