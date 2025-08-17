@@ -5,6 +5,27 @@ from datetime import datetime
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from weasyprint import HTML
+from flask import Flask
+from threading import Thread
+
+# --- ផ្នែក Web Server ដើម្បីឲ្យ Deploy ដំណើរការ ---
+# បង្កើត Flask App
+server = Flask('')
+
+# បង្កើត Route មេ ('/')
+@server.route('/')
+def home():
+    return "Bot is alive!"
+
+# បង្កើត Function ដើម្បីឲ្យ Server ដំណើរការ
+def run_server():
+  port = int(os.environ.get("PORT", 10000))
+  server.run(host='0.0.0.0', port=port)
+
+# ដំណើរការ Server នៅក្នុង Thread ផ្សេង
+flask_thread = Thread(target=run_server)
+# --- ចប់ផ្នែក Web Server ---
+
 
 # កំណត់ Logging
 logging.basicConfig(level=logging.INFO)
@@ -142,11 +163,16 @@ app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, convert_text_to_
 if __name__ == "__main__":
     try:
         logging.info("🚀 កំពុងចាប់ផ្តើម PDF Khmer Bot by TENG SAMBATH...")
+        
+        # ចាប់ផ្តើម Web Server នៅក្នុង Thread
+        flask_thread.start()
+        
         logging.info("✅ WeasyPrint PDF generation ready")
         logging.info("📐 Margins: Left/Right 0.35\", Top/Bottom 0.4\"")
         logging.info("📝 Font: 19px Khmer fonts")
         logging.info("🎯 Auto PDF conversion enabled")
         
+        # ចាប់ផ្តើម Bot
         app.run_polling()
         
     except Exception as e:
