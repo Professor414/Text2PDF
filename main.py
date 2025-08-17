@@ -3,9 +3,11 @@ import logging
 from io import BytesIO
 from datetime import datetime
 import traceback
+import html
 
 from telegram import Update, InputFile
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram.constants import ParseMode
 from weasyprint import HTML
 
 # កំណត់ Logging
@@ -21,7 +23,6 @@ if not TOKEN:
     raise RuntimeError("សូមកំណត់ BOT_TOKEN ជា environment variable មុនចាប់ផ្តើម។")
 
 # HTML Template (Khmer PDF)
-# សំខាន់៖ ប្រើ Font ដែលយើងនឹងដំឡើងនៅលើ Server (fonts-khmeros)
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="km">
@@ -69,25 +70,25 @@ def clear_session(chat_id: int):
     chat_titles.pop(chat_id, None)
 
 # ---------------------- PDF Generation Core Function ----------------------
-async def generate_and_send_pdf(chat_id: int, html_content: str, context: ContextTypes.DEFAULT_TYPE):
+async def generate_and_send_pdf(chat_id: int, html_content: str, context: ContextTypes.DEFAULT_TYPE, update: Update):
     """
     Core function to generate PDF from HTML, check size, and send.
     """
     try:
+        # បង្ហាញ "Typing..." action ដើម្បីឲ្យ User ដឹងថា Bot កំពុងដំណើរការ
+        await context.bot.send_chat_action(chat_id=chat_id, action='upload_document')
+
         pdf_buffer = BytesIO()
         HTML(string=html_content, base_url=".").write_pdf(pdf_buffer)
 
-        # ពិនិត្យទំហំឯកសារ PDF ធៀបនឹងដែនកំណត់ 50MB របស់ Telegram
         TELEGRAM_LIMIT_BYTES = 50 * 1024 * 1024
         if pdf_buffer.tell() >= TELEGRAM_LIMIT_BYTES:
             pdf_size_mb = pdf_buffer.tell() / (1024 * 1024)
             logger.warning(f"PDF size ({pdf_size_mb:.2f}MB) exceeds limit for chat {chat_id}")
-            await context.bot.send_message(
-                chat_id=chat_id,
+            await update.message.reply_text(
                 text=(
                     f"❌ **ឯកសារ PDF មានទំហំធំពេក!**\n\n"
-                    f"ទំហំឯកសារគឺ **{pdf_size_mb:.2f} MB** ដែលលើសពីដែនកំណត់ **50 MB** របស់ Telegram។\n\n"
-                    "💡 សូមព្យាយាមផ្ញើអត្ថបទខ្លីជាងនេះ ឬ បែងចែកជាផ្នែកៗ។"
+                    f"ទំហំឯកសារគឺ **{pdf_size_mb:.2f} MB** ដែលលើសពីដែនកំណត់ **50 MB** របស់ Telegram។"
                 )
             )
             return
@@ -96,22 +97,20 @@ async def generate_and_send_pdf(chat_id: int, html_content: str, context: Contex
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"KHMER_PDF_{timestamp}.pdf"
 
-        await context.bot.send_document(
-            chat_id=chat_id,
+        await update.message.reply_document(
             document=InputFile(pdf_buffer, filename=filename),
             caption="✅ **សូមអបអរ អត្ថបទរបស់អ្នករួចរាល់!**\n\n"
                     "• បង្កើតដោយ៖ https://t.me/ts_4699"
         )
         logger.info(f"PDF sent successfully to chat {chat_id}")
 
-    except Exception as e:
+    except Exception:
+        # ចាប់យក traceback សម្រាប់ logging
         error_details = traceback.format_exc()
-        logger.error(f"Failed to generate/send PDF for chat {chat_id}: {e}\n{error_details}")
-        await context.bot.send_message(
-            chat_id=chat_id,
+        logger.error(f"Failed to generate/send PDF for chat {chat_id}:\n{error_details}")
+        await update.message.reply_text(
             text=(
                 "❌ **មានបញ្ហាក្នុងការបង្កើត PDF!**\n\n"
-                f"**កំហុស:** `{str(e)}`\n\n"
                 "🔄 សូមព្យាយាមម្ដងទៀត។ ប្រសិនបើបញ្ហានៅតែកើតមាន សូមទាក់ទងអ្នកអភិវឌ្ឍន៍។"
             )
         )
@@ -132,7 +131,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• ពេលរួចរាល់ សូមវាយ /done ដើម្បីបង្កើតជាឯកសារ PDF តែមួយ។",
     ]
     if title:
-        lines.insert(1, f"📌 **ក្បាលអត្ថបទ:** {title}")
+        lines.insert(1, f"📌 **ក្បាលអត្ថបទ:** {html.escape(title)}")
 
     await update.message.reply_text("\n".join(lines))
 
@@ -151,36 +150,54 @@ async def done_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     blocks = []
     if title:
-        blocks.append(f"<h1>{title}</h1><hr>")
-    blocks.append(f'<div class="content">{full_text}</div>')
+        blocks.append(f"<h1>{html.escape(title)}</h1><hr>")
+    blocks.append(f'<div class="content">{html.escape(full_text)}</div>')
     final_html = HTML_TEMPLATE.format(content="\n".join(blocks))
-
-    await generate_and_send_pdf(chat_id, final_html, context)
+    
+    await generate_and_send_pdf(chat_id, final_html, context, update)
     clear_session(chat_id)
 
 async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     text = update.message.text
     
-    # Mode 1: If a session is active, collect text
     if chat_id in SESSIONS_ACTIVE:
         if text.strip().lower() in {"done", "រួច", "រួចហើយ", "finish", "end"}:
             await done_command(update, context)
         else:
             append_to_buffer(chat_id, text)
-            await update.message.reply_text("🧩 បានទទួល! បន្តផ្ញើមកទៀត ឬវាយ /done ពេលរួចរាល់។", reply_to_message_id=update.message.message_id)
-    # Mode 2: No active session, convert single message directly
+            await update.message.reply_text("🧩 បានទទួល! បន្តផ្ញើមកទៀត ឬវាយ /done ពេលរួចរាល់។", reply_to_message_id=update.message.id)
     else:
-        content = f'<div class="content">{_normalize_text(text)}</div>'
+        content = f'<div class="content">{html.escape(_normalize_text(text))}</div>'
         final_html = HTML_TEMPLATE.format(content=content)
-        await generate_and_send_pdf(chat_id, final_html, context)
+        await generate_and_send_pdf(chat_id, final_html, context, update)
+
+# FIX: បន្ថែម Error Handler ទូទៅ
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Log the error and send a telegram message to notify the user."""
+    logger.error("Exception while handling an update:", exc_info=context.error)
+
+    # ទទួលបាន traceback សម្រាប់ logging លម្អិត
+    tb_list = traceback.format_exception(None, context.error, context.error.__traceback__)
+    tb_string = "".join(tb_list)
+    logger.error(f"Traceback:\n{tb_string}")
+
+    # ជូនដំណឹងដល់អ្នកប្រើប្រាស់ថាមានបញ្ហា
+    if isinstance(update, Update):
+        await update.effective_message.reply_text(
+            "❌ សូមអភ័យទោស មានបញ្ហាបច្ចេកទេសកើតឡើង។ សូមព្យាយាមម្តងទៀតនៅពេលក្រោយ។"
+        )
 
 def main():
     app = Application.builder().token(TOKEN).build()
 
+    # ចុះឈ្មោះ handlers សម្រាប់ command និង message
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("done", done_command))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
+    
+    # FIX: ចុះឈ្មោះ error handler
+    app.add_error_handler(error_handler)
     
     logger.info("🚀 Bot is starting...")
     logger.info("🎯 Modes: single-message -> PDF, or /start.../done -> single PDF")
