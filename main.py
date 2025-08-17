@@ -39,6 +39,9 @@ HTML_TEMPLATE = """
 # ---------------------- ថែម: Session Buffer ----------------------
 from collections import defaultdict
 
+# FIX: Add a set to track which chats have an active /start session
+SESSIONS_ACTIVE = set()
+
 def _normalize_text(s: str) -> str:
     # កុំ strip ដើម្បីរក្សា space/newlines ដើម
     return (s or "").replace("\r\n", "\n").replace("\r", "\n")
@@ -58,6 +61,7 @@ def get_buffer_text(chat_id: int) -> str:
 def clear_session(chat_id: int):
     chat_buffers.pop(chat_id, None)
     chat_titles.pop(chat_id, None)
+    SESSIONS_ACTIVE.discard(chat_id) # FIX: Remove chat from active sessions set
 
 # ---------------------- កូដដើម (convert_text_to_pdf) ----------------------
 # សូមរក្សាទំរង់ function ដើមរបស់អ្នក ប្រសិនបើមាននៅក្នុងឯកសារពេញ
@@ -76,6 +80,19 @@ async def convert_text_to_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE
         # បង្កើត PDF ដោយប្រើ WeasyPrint
         pdf_buffer = BytesIO()
         HTML(string=final_html, base_url=".").write_pdf(pdf_buffer)
+
+        # FIX: Check PDF size against Telegram's 50MB limit before sending
+        TELEGRAM_LIMIT_MB = 50
+        if pdf_buffer.tell() >= TELEGRAM_LIMIT_MB * 1024 * 1024:
+            pdf_size_mb = pdf_buffer.tell() / (1024 * 1024)
+            logging.warning(f"PDF size ({pdf_size_mb:.2f}MB) exceeds limit for user {update.effective_user.id}")
+            await update.message.reply_text(
+                f"❌ **ឯកសារ PDF មានទំហំធំពេក!**\n\n"
+                f"ទំហំឯកសារគឺ **{pdf_size_mb:.2f} MB** ដែលលើសពីដែនកំណត់ **{TELEGRAM_LIMIT_MB} MB** របស់ Telegram។\n\n"
+                "💡 សូមព្យាយាមផ្ញើអត្ថបទខ្លីជាងនេះ។"
+            )
+            return
+        
         pdf_buffer.seek(0)
 
         # កំណត់ឈ្មោះ File
@@ -111,6 +128,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     chat_id = update.effective_chat.id
     clear_session(chat_id)
+    SESSIONS_ACTIVE.add(chat_id) # FIX: Mark this chat as having an active session
 
     # ប្រសិនបើមាន args បន្ទាប់ពី /start នឹងយកជាក្បាលអត្ថបទ
     if context.args:
@@ -167,6 +185,19 @@ async def done_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # បង្កើត PDF ដោយប្រើ WeasyPrint
         pdf_buffer = BytesIO()
         HTML(string=final_html, base_url=".").write_pdf(pdf_buffer)
+
+        # FIX: Check PDF size against Telegram's 50MB limit before sending
+        TELEGRAM_LIMIT_MB = 50
+        if pdf_buffer.tell() >= TELEGRAM_LIMIT_MB * 1024 * 1024:
+            pdf_size_mb = pdf_buffer.tell() / (1024 * 1024)
+            logging.warning(f"PDF size ({pdf_size_mb:.2f}MB) exceeds limit for user {update.effective_user.id}")
+            await update.message.reply_text(
+                f"❌ **ឯកសារ PDF មានទំហំធំពេក!**\n\n"
+                f"ទំហំឯកសារគឺ **{pdf_size_mb:.2f} MB** ដែលលើសពីដែនកំណត់ **{TELEGRAM_LIMIT_MB} MB** របស់ Telegram។\n\n"
+                "💡 សូមប្រើ /start ម្ដងទៀត ហើយផ្ញើអត្ថបទជាផ្នែកតូចៗ។"
+            )
+            return # The finally block will still run to clear the session
+            
         pdf_buffer.seek(0)
 
         # កំណត់ឈ្មោះ File
@@ -190,14 +221,25 @@ async def done_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ---------------------- App/Handlers ----------------------
 app = Application.builder().token(TOKEN).build()
 
-# Add Handlers ដើម
-app.add_handler(CommandHandler("start", start_command))                                # ថែម
-app.add_handler(CommandHandler("done", done_command))                                  # ថែម
-app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, collect_text))         # ថែម (ប្រមូល)
-# រក្សាដើម: handler ដើមបំលែងភ្លាមៗ សម្រាប់ករណីអ្នកចង់ប្រើ message តែមួយ
-# ប្រសិនបើមិនចង់ឲ្យបញ្ចូលគ្នា អាចដាក់កម្រិត path/condition ផ្សេង
-# ទុកនៅចុងក្រោយ ដើម្បីកុំឲ្យទប់ស្កាត់ /start /done
-app.add_handler(MessageHandler(filters.COMMAND == False, convert_text_to_pdf))
+# Add Command Handlers
+app.add_handler(CommandHandler("start", start_command))
+app.add_handler(CommandHandler("done", done_command))
+
+# FIX: Corrected handler logic to support both single-message and multi-message modes.
+# Handler for active sessions: Collects text into the buffer.
+# This only triggers if the chat_id is in our SESSIONS_ACTIVE set.
+app.add_handler(MessageHandler(
+    filters.TEXT & ~filters.COMMAND & filters.Chat(chat_id=SESSIONS_ACTIVE),
+    collect_text
+))
+
+# Fallback handler for inactive sessions: Converts a single message directly to PDF.
+# This runs for any text message that was NOT handled by the handler above.
+app.add_handler(MessageHandler(
+    filters.TEXT & ~filters.COMMAND,
+    convert_text_to_pdf
+))
+
 
 # Main Run
 if __name__ == "__main__":
