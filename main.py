@@ -1,9 +1,9 @@
 import os
 import logging
+import re
 from io import BytesIO
 from datetime import datetime
-from collections import defaultdict  # NEW
-import re  # NEW
+from collections import defaultdict
 
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
@@ -44,6 +44,8 @@ HTML_TEMPLATE = """
   @page { size: A4; margin: 0.4in 0.35in; }
   body { font-family: 'Khmer OS Battambang','Noto Sans Khmer','Noto Serif Khmer',sans-serif; font-size: 19px; line-height: 1.6; }
   p { margin: 0 0 8px 0; white-space: pre-wrap; }
+  h1 { font-size: 22px; margin: 0 0 12px 0; }
+  hr { border: none; border-top: 1px solid #999; margin: 10px 0 16px 0; }
 </style>
 </head>
 <body>
@@ -53,91 +55,115 @@ HTML_TEMPLATE = """
 """
 
 # =========================
-# NEW: Session buffer logic
+# Session buffer & helpers
 # =========================
-chat_buffers = defaultdict(list)  # chat_id -> [str, str, ...]
+chat_buffers = defaultdict(list)      # chat_id -> [text, text, ...]
+chat_titles  = {}                     # chat_id -> title string (optional)
 
 def _normalize_text(s: str) -> str:
-    s = s.replace('\r\n', '\n').replace('\r', '\n')
-    # កាត់បន្ថយខ្សែទទេ 3+ ជា 2
-    s = re.sub(r'\n{3,}', '\n\n', s)
+    s = (s or "").replace('\r\n', '\n').replace('\r', '\n')
+    s = re.sub(r'\n{3,}', '\n\n', s)  # កាត់បន្ថយខ្សែទទេ 3+ ជា 2
     return s.strip()
 
 def append_to_buffer(chat_id: int, text: str):
-    text = _normalize_text(text)
-    if text:
-        chat_buffers[chat_id].append(text)
-
-def clear_buffer(chat_id: int):
-    if chat_id in chat_buffers:
-        del chat_buffers[chat_id]
+    t = _normalize_text(text)
+    if t:
+        chat_buffers[chat_id].append(t)
 
 def get_buffer_text(chat_id: int) -> str:
     parts = chat_buffers.get(chat_id, [])
     return ("\n\n".join(parts)).strip() if parts else ""
 
-# =========================
-# Handlers ដើម (ត្រូវមាន start_command ដូចដើម)
-# =========================
-async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "សូមស្វាគមន៍!\n"
-        "ផ្ញើអត្ថបទមកជាបន្តបន្ទាប់ ហើយពេលរួច សូមសរសេរ /done ដើម្បីបំលែងជា PDF មួយ។"
-    )
+def clear_session(chat_id: int):
+    if chat_id in chat_buffers:
+        del chat_buffers[chat_id]
+    if chat_id in chat_titles:
+        del chat_titles[chat_id]
 
 # =========================
-# NEW: Message collector
+# Handlers
 # =========================
+async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    /start = ចាប់ផ្តើមសម័យប្រមូលអត្ថបទ និងកំណត់ក្បាលអត្ថបទ (optional title)
+    ប្រសិនបើអ្នកផ្ដល់ args បន្ទាប់ពី /start នឹងយកជាក្បាលអត្ថបទ
+    ឧ: /start ប្រធានបទរឿងអប់រំ
+    """
+    chat_id = update.effective_chat.id
+    clear_session(chat_id)
+
+    # Title ពី arguments បន្ទាប់ពី /start បើមាន
+    title = ""
+    if context.args:
+        title = _normalize_text(" ".join(context.args))
+        if title:
+            chat_titles[chat_id] = title
+
+    msg_lines = [
+        "✅ ចាប់ផ្តើមសម័យប្រមូលអត្ថបទ!",
+        "• ផ្ញើអត្ថបទជាបន្តបន្ទាប់ អាចវែង និងបែកជាច្រើនសារ។",
+        "• ពេលចប់ សរសេរ /done ដើម្បីបំលែងជាឯកសារ PDF មួយ។"
+    ]
+    if title:
+        msg_lines.insert(1, f"📌 ក្បាលអត្ថបទ: {title}")
+
+    await update.message.reply_text("\n".join(msg_lines))
+
 async def collect_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    ជំនួសការបំលែងភ្លាមៗ៖ ប្រមូលសារ​ទៅ buffer រហូតដល់ /done
+    ប្រមូលសារ TEXT ទាំងអស់ចូល buffer រហូតដល់ /done
+    ក៏គាំទ្រ 'done/រួច/រួចហើយ/end/finish' ជា inline សញ្ញាបញ្ចប់
     """
-    if not update.message or not update.message.text:
+    if not update.message or update.message.text is None:
         return
 
     chat_id = update.effective_chat.id
-    text = (update.message.text or "").strip()
+    text = update.message.text.strip()
 
-    # បើអ្នកប្រើវាយពាក្យ "រួច" "done" ជាអក្សរ​ធម្មតា ក៏អាចបញ្ចប់បានដែរ
-    if text in {"រួច", "រួចហើយ", "done", "finish", "end"}:
+    if text in {"done", "រួច", "រួចហើយ", "end", "finish"}:
         return await done_command(update, context)
 
     append_to_buffer(chat_id, text)
     total_chars = len(get_buffer_text(chat_id))
     await update.message.reply_text(
-        f"✅ បានទទួល! បច្ចុប្បន្នប្រមូល {total_chars} តួអក្សរ.\n"
-        f"➡️ ពេលរួច សរសេរ /done ដើម្បីបំលែងជា PDF មួយ។"
+        f"🧩 បានបន្ថែម! បច្ចុប្បន្នប្រមូល {total_chars} តួអក្សរ។\n"
+        f"➡️ សរសេរ /done ពេលរួច។"
     )
 
-# =========================
-# NEW: /done command
-# =========================
 async def done_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    បំលែងអត្ថបទទាំងអស់ក្នុង buffer ជា PDF មួយ បន្ទាប់មកសម្អាត buffer
+    /done = បំលែងអត្ថបទទាំងអស់ក្នុង buffer (និង title ប្រសិនបើមាន)
+    ជា PDF មួយ ហើយផ្ញើត្រឡប់
     """
     chat_id = update.effective_chat.id
     user_text = get_buffer_text(chat_id)
+    title = chat_titles.get(chat_id, "").strip()
 
-    if not user_text:
-        return await update.message.reply_text("⚠️ មិនមានអត្ថបទក្នុង buffer ទេ។ សូមផ្ញើអត្ថបទមុន!")
+    if not user_text and not title:
+        return await update.message.reply_text(
+            "⚠️ មិនមានអត្ថបទសម្រាប់បំលែងទេ។ ប្រើ /start ដើម្បីចាប់ផ្តើមហើយផ្ញើអត្ថបទ។"
+        )
 
     try:
-        # ប្រែអត្ថបទជាបន្ទាត់ៗ
-        paragraphs = []
-        lines = user_text.replace('\r\n', '\n').replace('\r', '\n').split('\n')
-        for line in lines:
+        # Build HTML
+        blocks = []
+        if title:
+            blocks.append(f"<h1>{title}</h1><hr>")
+
+        for line in (title + ("\n\n" if title and user_text else "") + user_text).split('\n'):
             line = line.strip()
             if line:
-                paragraphs.append(f"<p>{line}</p>")
+                blocks.append(f"<p>{line}</p>")
 
-        html_content = '\n '.join(paragraphs)
+        html_content = "\n ".join(blocks) if blocks else "<p></p>"
         final_html = HTML_TEMPLATE.format(content=html_content)
 
+        # Generate PDF
         pdf_buffer = BytesIO()
         HTML(string=final_html).write_pdf(pdf_buffer)
         pdf_buffer.seek(0)
 
+        # Send PDF
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"KHMER_PDF_{timestamp}.pdf"
 
@@ -145,46 +171,43 @@ async def done_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             chat_id=chat_id,
             document=pdf_buffer,
             filename=filename,
-            caption="✅ បានរួមសារ Telegram ជា PDF មួយរួចរាល់!"
+            caption="✅ PDF មួយបានបញ្ចប់ (រួមសារ​ទាំងអស់)!"
         )
+        await update.message.reply_text("📄 សូមពិនិត្យឯកសារ PDF ដែលបានផ្ញើឡើង!")
 
-        logging.info(f"PDF បង្កើតជោគជ័យសម្រាប់ chat {chat_id}")
-        await update.message.reply_text("📄 PDF រួច! ✅")
+        logging.info("PDF sent (chat=%s, chars=%s)", chat_id, len(user_text) + len(title))
     except Exception as e:
         import traceback
-        logging.error(f"បង្កើត PDF បរាជ័យ: {e}\n{traceback.format_exc()}")
-        await update.message.reply_text(f"❌ មានបញ្ហាក្នុងការបង្កើត PDF: {e}")
+        logging.error("PDF error: %s\n%s", e, traceback.format_exc())
+        await update.message.reply_text(f"❌ បរាជ័យក្នុងការបង្កើត PDF: {e}")
     finally:
-        clear_buffer(chat_id)
+        # Clear session for next round
+        clear_session(chat_id)
 
 # =========================
-# Application setup ដើម
+# Application setup
 # =========================
 app = Application.builder().token(TOKEN).build()
 
-# Add Handlers
+# Add Handlers (សំខាន់: លំដាប់)
 app.add_handler(CommandHandler("start", start_command))
-
-# NEW: បន្ថែមពាក្យបញ្ជា /done
-app.add_handler(CommandHandler("done", done_command))  # NEW
-
-# NEW: ប្រមូលសារ text ទាំងអស់ជាទូទៅ
-app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, collect_text))  # NEW
+app.add_handler(CommandHandler("done", done_command))   # ត្រូវនៅមុន text handler
+app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, collect_text))
 
 # Main Run
 if __name__ == "__main__":
     try:
         logging.info("🚀 កំពុងចាប់ផ្តើម PDF Khmer Bot by TENG SAMBATH...")
 
-        # ចាប់ផ្តើម Web Server នៅក្នុង Thread (ដើម)
+        # ចាប់ផ្តើម Web Server នៅក្នុង Thread ដូចដើម
         flask_thread.start()
 
         logging.info("✅ WeasyPrint PDF generation ready")
         logging.info("📐 Margins: Left/Right 0.35\", Top/Bottom 0.4\"")
         logging.info("📝 Font: 19px Khmer fonts")
-        logging.info("🎯 Auto PDF conversion enabled")
+        logging.info("🎯 Aggregation with /start → collect → /done")
 
-        # ចាប់ផ្តើម Bot (ដើម)
+        # ចាប់ផ្តើម Bot ដូចដើម
         app.run_polling()
 
     except Exception as e:
