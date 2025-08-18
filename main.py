@@ -19,7 +19,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# --------------------- ENV ---------------------
+# --------------------- Environment Variable ---------------------
 TOKEN = os.getenv("BOT_TOKEN")
 if not TOKEN:
     raise RuntimeError("សូមកំណត់ BOT_TOKEN ជា environment variable មុនចាប់ផ្តើម។")
@@ -42,9 +42,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 </body>
 </html>"""
 
-# --------------------- Session State ---------------------
+# --------------------- Session Management ---------------------
 SESSIONS_ACTIVE = set()
-# chat_chunks[chat_id] = list of tuples: (seq, text)
 chat_chunks: dict[int, list[tuple[int, str]]] = defaultdict(list)
 chat_titles: dict[int, str] = {}
 
@@ -60,25 +59,25 @@ def append_chunk(chat_id: int, text: str):
 
 def get_merged_text(chat_id: int) -> str:
     chunks = chat_chunks.get(chat_id, [])
-    # Sort by sequence number to guarantee order
     chunks_sorted = sorted(chunks, key=lambda x: x[0])
-    # FIX: The bug was here. Use c[1] which is the text.
     return "\n".join(c[1] for c in chunks_sorted)
 
 def clear_session(chat_id: int):
+    """Clears all session data for a given chat."""
     SESSIONS_ACTIVE.discard(chat_id)
-    chat_chunks.pop(cat_id, None)
+    # FIX: Corrected the typo from `cat_id` to `chat_id`
+    chat_chunks.pop(chat_id, None)
     chat_titles.pop(chat_id, None)
 
-# --------------------- PDF Generator ---------------------
+# --------------------- Core PDF Generator Function ---------------------
 async def generate_and_send_pdf(chat_id: int, html_content: str, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Generates a PDF from HTML, checks size, and sends it to the user."""
     try:
         await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.UPLOAD_DOCUMENT)
 
         pdf_buffer = BytesIO()
         HTML(string=html_content, base_url=".").write_pdf(pdf_buffer)
 
-        # Re-add size check for safety
         TELEGRAM_LIMIT_BYTES = 50 * 1024 * 1024
         if pdf_buffer.tell() >= TELEGRAM_LIMIT_BYTES:
             size_mb = pdf_buffer.tell() / (1024 * 1024)
@@ -100,8 +99,9 @@ async def generate_and_send_pdf(chat_id: int, html_content: str, update: Update,
         logger.error("Generate/Send PDF failed for chat %s:\n%s", chat_id, traceback.format_exc())
         await update.message.reply_text("❌ មានបញ្ហាក្នុងការបង្កើត/ផ្ញើ PDF! សូមព្យាយាមម្ដងទៀត។")
 
-# --------------------- Handlers ---------------------
+# --------------------- Telegram Handlers ---------------------
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Starts a new session for collecting multiple text messages."""
     chat_id = update.effective_chat.id
     clear_session(chat_id)
     SESSIONS_ACTIVE.add(chat_id)
@@ -120,6 +120,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("\n".join(lines))
 
 async def done_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Finishes a session, merges all text, and generates the PDF."""
     chat_id = update.effective_chat.id
     if chat_id not in SESSIONS_ACTIVE:
         await update.message.reply_text("⚠️ មិនមានសម័យប្រមូលកំពុងដំណើរការទេ។ សូមប្រើ /start ជាមុនសិន។")
@@ -142,6 +143,7 @@ async def done_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     clear_session(chat_id)
 
 async def session_text_collector(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Collects text messages during an active session."""
     chat_id = update.effective_chat.id
     text = update.message.text
 
@@ -153,6 +155,7 @@ async def session_text_collector(update: Update, context: ContextTypes.DEFAULT_T
     await update.message.reply_text(f"🧩 បានទទួល ({total})! វាយ /done ពេលរួចរាល់។")
 
 async def single_text_converter(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Converts a single text message directly to PDF when no session is active."""
     chat_id = update.effective_chat.id
     text = _normalize_text(update.message.text)
     
@@ -160,8 +163,8 @@ async def single_text_converter(update: Update, context: ContextTypes.DEFAULT_TY
     final_html = HTML_TEMPLATE.format(content=content)
     await generate_and_send_pdf(chat_id, final_html, update, context)
     
-# FIX: Added a global error handler to prevent silent crashes
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Global error handler to log errors and notify the user."""
     logger.error("Exception while handling an update:", exc_info=context.error)
     tb_string = "".join(traceback.format_exception(None, context.error, context.error.__traceback__))
     logger.error(f"Traceback:\n{tb_string}")
@@ -171,20 +174,20 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
             "❌ សូមអភ័យទោស មានបញ្ហាបច្ចេកទេសកើតឡើង។ សូមព្យាយាមម្តងទៀត។"
         )
 
-# --------------------- App wiring ---------------------
+# --------------------- Application Setup ---------------------
 def main():
+    """Starts the bot."""
     app = Application.builder().token(TOKEN).build()
 
+    # Register command handlers
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("done", done_command))
 
-    # Handler for active sessions: Collects text into the buffer.
+    # Register message handlers based on session state
     app.add_handler(MessageHandler(
         filters.TEXT & ~filters.COMMAND & filters.Chat(chat_id=SESSIONS_ACTIVE),
         session_text_collector
     ))
-
-    # Fallback handler for inactive sessions: Converts a single message directly.
     app.add_handler(MessageHandler(
         filters.TEXT & ~filters.COMMAND,
         single_text_converter
