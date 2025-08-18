@@ -2,6 +2,7 @@ import os
 import logging
 from io import BytesIO
 from datetime import datetime
+import re
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from weasyprint import HTML
@@ -71,6 +72,20 @@ app = Application.builder().token(TOKEN).build()
 # Memory buffer per user
 user_data_store = {}
 
+def format_text_with_speaker_markers(text: str) -> str:
+    """
+    បន្ថែម <br> (ចុះបន្ទាត់) ពេលជួប Speaker markers
+    ឧ. A. B. ... Z. ឬ ក. ខ. គ. ... អ.
+    """
+    # Regex patterns
+    patterns = [
+        r"(^|\s)([A-Z])\.",   # A. B. ... Z.
+        r"(^|\s)([ក-អ])\."   # ក. ខ. គ. ... អ.
+    ]
+    for pattern in patterns:
+        text = re.sub(pattern, r"<br>\2.", text)
+    return text
+
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     user_data_store[user_id] = []  # reset
@@ -97,9 +112,17 @@ async def done_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ មិនមានអត្ថបទ! សូមផ្ញើអត្ថបទជាមុនសិន។")
         return
 
+    # កុំអោយអ្នកសង្ស័យថា Bot អត់ដំណើរការ
+    await update.message.reply_text("⏳ សូមរង់ចាំ... កំពុងបង្កើត PDF")
+
     try:
         # Join all text
-        paragraphs = [f"<p>{line}</p>" for line in user_data_store[user_id] if line.strip()]
+        paragraphs = []
+        for line in user_data_store[user_id]:
+            if line.strip():
+                formatted_line = format_text_with_speaker_markers(line.strip())
+                paragraphs.append(f"<p>{formatted_line}</p>")
+
         html_content = "\n        ".join(paragraphs)
         final_html = HTML_TEMPLATE.format(content=html_content)
 
@@ -132,5 +155,5 @@ app.add_handler(CommandHandler("done", done_command))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, receive_text))
 
 if __name__ == "__main__":
-    logging.info("🚀 Bot Running...")
+    logging.info("🚀 Bot Running with Speaker Marker Support...")
     app.run_polling()
