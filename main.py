@@ -77,7 +77,6 @@ def format_text_with_speaker_markers(text: str) -> str:
     បន្ថែម <br> (ចុះបន្ទាត់) ពេលជួប Speaker markers
     ឧ. A. B. ... Z. ឬ ក. ខ. គ. ... អ.
     """
-    # Regex patterns
     patterns = [
         r"(^|\s)([A-Z])\.",   # A. B. ... Z.
         r"(^|\s)([ក-អ])\."   # ក. ខ. គ. ... អ.
@@ -112,7 +111,6 @@ async def done_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ មិនមានអត្ថបទ! សូមផ្ញើអត្ថបទជាមុនសិន។")
         return
 
-    # កុំអោយអ្នកសង្ស័យថា Bot អត់ដំណើរការ
     await update.message.reply_text("⏳ សូមរង់ចាំ... កំពុងបង្កើត PDF")
 
     try:
