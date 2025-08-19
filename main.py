@@ -3,6 +3,7 @@ import logging
 from io import BytesIO
 from datetime import datetime
 import re
+import asyncio
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from weasyprint import HTML
@@ -74,24 +75,33 @@ user_data_store = {}
 
 def format_text_with_speaker_markers(text: str) -> str:
     """
-    បន្ថែម <br> ពេលជួប Speaker markers ដូចជា
-    ក. ខ. ... អ. ឬ A. B. ... Z. និងលេខ 1. 2. ...
+    បន្ថែម <br> មុន Speaker markers (A. ក. 1.) ទាំងអស់
+    ទោះបីជាមាននៅកណ្តាលប្រយោគក៏ដោយ។
     """
     patterns = [
-        r"(^|\s)([A-Z])\.",       # A. B. ... Z.
-        r"(^|\s)([ក-អ])\.",       # ក. ខ. គ. ... អ.
-        r"(^|\s)(\d+)\."          # 1. 2. 3. ...
+        r"([A-Z]\.)",     # A. B. ...
+        r"([ក-អ]\.)",    # ក. ខ. ...
+        r"(\d+\.)"       # 1. 2. ...
     ]
     for pattern in patterns:
-        text = re.sub(pattern, r"<br>\2.", text)
+        text = re.sub(pattern, r"<br>\1", text)
     return text
+
+async def safe_generate_pdf(html_content: str, timeout: int = 20):
+    try:
+        return await asyncio.wait_for(
+            asyncio.to_thread(lambda: HTML(string=html_content).write_pdf()),
+            timeout=timeout
+        )
+    except asyncio.TimeoutError:
+        raise RuntimeError("⏱️ PDF generation timeout!")
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     user_data_store[user_id] = []  # reset
     await update.message.reply_text(
         "🇰🇭 BOT បំលែងអត្ថបទទៅជា PDF 🇰🇭 \n\n"
-        "📝 សូមផ្ញើអត្ថបទជាផ្នែកៗ \n"
+        "📝 សូមផ្ញើអត្ថបទជាផ្នែកៗ (Chunks)\n"
         "➡️ ពេលចប់ សូមវាយ /done ដើម្បីបង្កើត PDF"
     )
 
@@ -125,9 +135,9 @@ async def done_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         html_content = "\n        ".join(paragraphs)
         final_html = HTML_TEMPLATE.format(content=html_content)
 
-        # PDF generate
-        pdf_buffer = BytesIO()
-        HTML(string=final_html).write_pdf(pdf_buffer)
+        # PDF generate with timeout
+        pdf_data = await safe_generate_pdf(final_html, timeout=25)
+        pdf_buffer = BytesIO(pdf_data)
         pdf_buffer.seek(0)
 
         # filename
@@ -148,11 +158,28 @@ async def done_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"❌ មានបញ្ហា: {str(e)}")
 
+# Error Handler
+async def handle_errors(update: object, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        raise context.error
+    except Exception as e:
+        logging.error(f"⚠️ Bot error: {e}")
+        if isinstance(update, Update) and update.effective_message:
+            await update.effective_message.reply_text("❌ Bot error occurred, but I'm still alive!")
+
+# Keep alive job
+async def keep_alive(context: ContextTypes.DEFAULT_TYPE):
+    logging.info("✅ Keep-alive ping... Bot still running!")
+
+job_queue = app.job_queue
+job_queue.run_repeating(keep_alive, interval=300, first=10)
+
 # Handlers
 app.add_handler(CommandHandler("start", start_command))
 app.add_handler(CommandHandler("done", done_command))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, receive_text))
+app.add_error_handler(handle_errors)
 
 if __name__ == "__main__":
-    logging.info("🚀 Bot Running with Speaker Marker Support...")
+    logging.info("🚀 Bot Running with Speaker Marker + Timeout Protection...")
     app.run_polling()
