@@ -1,108 +1,157 @@
 import os
-import re
 import logging
+from io import BytesIO
 from datetime import datetime
+import re
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from weasyprint import HTML
 
 # Logging
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 # Token
-BOT_TOKEN = os.getenv("BOT_TOKEN")
+TOKEN = os.getenv("BOT_TOKEN")
+if not TOKEN:
+    raise RuntimeError("សូមកំណត់ BOT_TOKEN ជា environment variable មុនចាប់ផ្តើម។")
 
-# Memory store
-user_texts = {}
-
-# Regex detect only line-start patterns
-PATTERN = re.compile(r"^(A\.|[ក-ឳ]\.|[0-9១-៩]+\.)", re.MULTILINE)
-
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_texts[update.effective_user.id] = []
-    await update.message.reply_text(
-        "សួស្តី! ផ្ញើអត្ថបទជាបន្ទាត់ៗ។\n"
-        "- បើចង់បានក្បាលប្រធាន ចាប់ផ្តើមជួរដោយ A.\n"
-        "- ចំណុច អក្សរខ្មែរ ចាប់ផ្តើមជួរដោយ ក. ខ. គ.…\n"
-        "- លេខ ចាប់ផ្តើមជួរដោយ ១. ឬ 1.\n\n"
-        "ពេលបញ្ចប់ វាយ /done ដើម្បីទទួល PDF។"
-    )
-
-async def save_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    uid = update.effective_user.id
-    if uid not in user_texts:
-        user_texts[uid] = []
-    user_texts[uid].append(update.message.text)
-    await update.message.reply_text("📌 អត្ថបទបានរក្សាទុក!")
-
-async def done(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    uid = update.effective_user.id
-    if uid not in user_texts or not user_texts[uid]:
-        await update.message.reply_text("❌ មិនមានអត្ថបទសម្រាប់បំលែងទេ។")
-        return
-
-    text = "\n".join(user_texts[uid])
-
-    # Insert <br> only before line-start markers
-    formatted_text = PATTERN.sub(r"<br>\1", text)
-
-    # Wrap in HTML
-    html_content = f"""
-    <html>
-    <head>
-      <meta charset="utf-8"/>
-      <style>
-        @font-face {{
-          font-family: "NotoSansKhmer";
-          src: local("Noto Sans Khmer"), local("Battambang");
+# HTML Template
+HTML_TEMPLATE = """<!DOCTYPE html>
+<html lang="km">
+<head>
+    <meta charset="utf-8">
+    <title>PDF Khmer by TENG SAMBATH</title>
+    <style>
+        @page {{
+            margin-left: 0.40in;
+            margin-right: 0.40in;
+            margin-top: 0.4in;
+            margin-bottom: 0.4in;
         }}
         body {{
-          font-family: "NotoSansKhmer", "Battambang", sans-serif;
-          font-size: 19px;
-          line-height: 2;
-          margin: 0.4in;
+            font-family: 'Battambang', 'Noto Sans Khmer', 'Khmer OS', 'Arial', sans-serif;
+            font-size: 19px;
+            line-height: 2;
+            color: #222;
+            margin: 0;
+            padding: 0;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+            word-break: keep-all;
         }}
-        footer {{
-          position: fixed;
-          bottom: 10px;
-          left: 0;
-          right: 0;
-          text-align: center;
-          font-size: 12px;
-          color: gray;
+        .content {{
+            margin-bottom: 30px;
         }}
-      </style>
-    </head>
-    <body>
-      {formatted_text}
-      <footer>Bot Text2PDF | Teng Sambath</footer>
-    </body>
-    </html>
+        .content p {{
+            margin: 0 0 15px 0;
+            text-align: left;
+        }}
+        .footer {{
+            color: #666;
+            font-size: 10px;
+            margin-top: 30px;
+            padding-top: 10px;
+            border-top: 1px solid #eee;
+        }}
+    </style>
+    <link href="https://fonts.googleapis.com/css2?family=Battambang:wght@400;700&family=Noto+Sans+Khmer:wght@400;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="content">
+        {content}
+    </div>
+    <div class="footer">
+Bot Text2PDF | Teng Sambath
+    </div>
+</body>
+</html>"""
+
+# Application
+app = Application.builder().token(TOKEN).build()
+
+# Memory buffer per user
+user_data_store = {}
+
+def format_text_with_speaker_markers(text: str) -> str:
     """
+    បន្ថែម <br> (ចុះបន្ទាត់) ពេលជួប Speaker markers
+    ឧ. A. B. ... Z. ឬ ក. ខ. គ. ... អ.
+    """
+    patterns = [
+        r"(^|\s)([A-Z])\.",   # A. B. ... Z.
+        r"(^|\s)([ក-អ])\."   # ក. ខ. គ. ... អ.
+    ]
+    for pattern in patterns:
+        text = re.sub(pattern, r"<br>\2.", text)
+    return text
 
-    # Export to PDF
-    filename = f"KHMER_PDF_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
-    HTML(string=html_content).write_pdf(filename)
+async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    user_data_store[user_id] = []  # reset
+    await update.message.reply_text(
+        "🇰🇭 BOT បំលែងអត្ថបទទៅជា PDF 🇰🇭 \n\n"
+        "📝 សូមផ្ញើអត្ថបទជាផ្នែកៗ (Chunks)\n"
+        "➡️ ពេលចប់ សូមវាយ /done ដើម្បីបង្កើត PDF"
+    )
 
-    await update.message.reply_document(open(filename, "rb"), filename=filename)
+async def receive_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    text = update.message.text.strip()
 
-    # Clear memory
-    user_texts[uid] = []
+    if user_id not in user_data_store:
+        user_data_store[user_id] = []
 
-def main():
-    if not BOT_TOKEN:
-        print("❌ BOT_TOKEN not set")
+    if not text.startswith("/"):
+        user_data_store[user_id].append(text)
+        await update.message.reply_text("📌 អត្ថបទបានរក្សាទុក! បន្តផ្ញើឬវាយ /done ដើម្បីបញ្ចប់។")
+
+async def done_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if user_id not in user_data_store or not user_data_store[user_id]:
+        await update.message.reply_text("❌ មិនមានអត្ថបទ! សូមផ្ញើអត្ថបទជាមុនសិន។")
         return
 
-    app = Application.builder().token(BOT_TOKEN).build()
+    await update.message.reply_text("⏳ សូមរង់ចាំ... កំពុងបង្កើត PDF")
 
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("done", done))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, save_text))
+    try:
+        # Join all text
+        paragraphs = []
+        for line in user_data_store[user_id]:
+            if line.strip():
+                formatted_line = format_text_with_speaker_markers(line.strip())
+                paragraphs.append(f"<p>{formatted_line}</p>")
 
-    logger.info("🚀 Bot Running…")
-    app.run_polling()
+        html_content = "\n        ".join(paragraphs)
+        final_html = HTML_TEMPLATE.format(content=html_content)
+
+        # PDF generate
+        pdf_buffer = BytesIO()
+        HTML(string=final_html).write_pdf(pdf_buffer)
+        pdf_buffer.seek(0)
+
+        # filename
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"KHMER_PDF_{timestamp}.pdf"
+
+        # send back
+        await context.bot.send_document(
+            chat_id=update.effective_chat.id,
+            document=pdf_buffer,
+            filename=filename,
+            caption="✅ **សូមអបអរ! PDF រួចរាល់**"
+        )
+
+        # clear buffer
+        user_data_store[user_id] = []
+
+    except Exception as e:
+        await update.message.reply_text(f"❌ មានបញ្ហា: {str(e)}")
+
+# Handlers
+app.add_handler(CommandHandler("start", start_command))
+app.add_handler(CommandHandler("done", done_command))
+app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, receive_text))
 
 if __name__ == "__main__":
-    main()
+    logging.info("🚀 Bot Running with Speaker Marker Support...")
+    app.run_polling()
