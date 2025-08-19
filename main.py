@@ -167,12 +167,14 @@ async def handle_errors(update: object, context: ContextTypes.DEFAULT_TYPE):
         if isinstance(update, Update) and update.effective_message:
             await update.effective_message.reply_text("❌ Bot error occurred, but I'm still alive!")
 
-# Keep alive job
+# Keep alive job (use post_init hook)
 async def keep_alive(context: ContextTypes.DEFAULT_TYPE):
     logging.info("✅ Keep-alive ping... Bot still running!")
 
-job_queue = app.job_queue
-job_queue.run_repeating(keep_alive, interval=300, first=10)
+async def on_startup(app: Application):
+    app.job_queue.run_repeating(keep_alive, interval=300, first=10)
+
+app.post_init = on_startup
 
 # Handlers
 app.add_handler(CommandHandler("start", start_command))
