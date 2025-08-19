@@ -74,12 +74,13 @@ user_data_store = {}
 
 def format_text_with_speaker_markers(text: str) -> str:
     """
-    បន្ថែម <br> (ចុះបន្ទាត់) ពេលជួប Speaker markers
-    ឧ. A. B. ... Z. ឬ ក. ខ. គ. ... អ.
+    បន្ថែម <br> ពេលជួប Speaker markers ដូចជា
+    ក. ខ. ... អ. ឬ A. B. ... Z. និងលេខ 1. 2. ...
     """
     patterns = [
-        r"(^|\s)([A-Z])\.",   # A. B. ... Z.
-        r"(^|\s)([ក-អ])\."   # ក. ខ. គ. ... អ.
+        r"(^|\s)([A-Z])\.",       # A. B. ... Z.
+        r"(^|\s)([ក-អ])\.",       # ក. ខ. គ. ... អ.
+        r"(^|\s)(\d+)\."          # 1. 2. 3. ...
     ]
     for pattern in patterns:
         text = re.sub(pattern, r"<br>\2.", text)
@@ -90,7 +91,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_data_store[user_id] = []  # reset
     await update.message.reply_text(
         "🇰🇭 BOT បំលែងអត្ថបទទៅជា PDF 🇰🇭 \n\n"
-        "📝 សូមផ្ញើអត្ថបទជាផ្នែកៗ (Chunks)\n"
+        "📝 សូមផ្ញើអត្ថបទជាផ្នែកៗ \n"
         "➡️ ពេលចប់ សូមវាយ /done ដើម្បីបង្កើត PDF"
     )
 
