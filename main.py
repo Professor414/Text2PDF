@@ -3,6 +3,7 @@ import logging
 from io import BytesIO
 from datetime import datetime
 import re
+import html # បន្ថែម import នេះ
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from weasyprint import HTML
@@ -116,14 +117,22 @@ async def done_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("⏳ សូមរង់ចាំ... កំពុងបង្កើត PDF")
 
     try:
-        # Join all text
-        paragraphs = []
-        for line in user_data_store[user_id]:
-            if line.strip():
-                formatted_line = format_text_with_speaker_markers(line.strip())
-                paragraphs.append(f"<p>{formatted_line}</p>")
+        # --- START: កែប្រែតក្កវិជ្ជាត្រង់នេះ ---
+        
+        # 1. ប្រមូលគ្រប់អត្ថបទដែលបានផ្ញើ បញ្ចូលទៅក្នុង string តែមួយ ដោយបំបែកបន្ទាត់ដោយ (\n)
+        full_text = "\n".join(user_data_store[user_id])
+        
+        # 2. ការពារកូដ HTML ដែលអ្នកប្រើអាចបញ្ចូលដោយចៃដន្យ
+        escaped_text = html.escape(full_text)
+        
+        # 3. ប្រើ function ដែលមានស្រាប់ ដើម្បីបន្ថែម <br> នៅពីមុខបញ្ជីរាយ (ក., A., 1., ១.)
+        formatted_with_markers = format_text_with_speaker_markers(escaped_text)
+        
+        # 4. បំលែងរាល់ការចុះបន្ទាត់ (\n) ទៅជា <br> សម្រាប់ HTML
+        html_content = formatted_with_markers.replace('\n', '<br>\n')
 
-        html_content = "\n        ".join(paragraphs)
+        # --- END: កែប្រែតក្កវិជ្ជាត្រង់នេះ ---
+
         final_html = HTML_TEMPLATE.format(content=html_content)
 
         # PDF generate
