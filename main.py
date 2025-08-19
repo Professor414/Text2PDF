@@ -3,13 +3,16 @@ import logging
 from io import BytesIO
 from datetime import datetime
 import re
-import html # បន្ថែម import នេះ
+import html
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from weasyprint import HTML
 
 # Logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
+)
+logger = logging.getLogger(__name__)
 
 # Token
 TOKEN = os.getenv("BOT_TOKEN")
@@ -43,10 +46,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         .content {{
             margin-bottom: 30px;
         }}
-        .content p {{
-            margin: 0 0 15px 0;
-            text-align: left;
-        }}
         .footer {{
             color: #666;
             font-size: 10px;
@@ -68,24 +67,30 @@ Bot Text2PDF | Teng Sambath
 </html>"""
 
 # Application
-app = Application.builder().token(TOKEN).build()
+# <--- ការកែប្រែទី១៖ បន្ថែម read_timeout និង connect_timeout ដើម្បីការពារការផ្តាច់ (Timeout)
+app = Application.builder().token(TOKEN).read_timeout(30).connect_timeout(30).build()
 
 # Memory buffer per user
 user_data_store = {}
 
-def format_text_with_speaker_markers(text: str) -> str:
+def format_text_for_pdf(text: str) -> str: # <--- ប្តូរឈ្មោះ Function ឱ្យកាន់តែច្បាស់
     """
-    បន្ថែម <br> ចុះបន្ទាត់ តែពេល Marker នៅដើមបន្ទាត់ (Line start) ប៉ុណ្ណោះ
+    បន្ថែម <br> ចុះបន្ទាត់ និង Highlight ពណ៌លឿងនៅពីមុខ Marker
     A. B. ... / ក. ខ. ... / 1. 2. ... / ១. ២. ...
     """
+    # <--- ការកែប្រែទី២៖ បន្ថែម <span> សម្រាប់ Highlight ពណ៌លឿង
+    highlight_style = 'style="background-color: yellow;"'
+    
     patterns = [
-        r"(?m)^(?:\s*)([A-Z])\.",       # A. B. ...
-        r"(?m)^(?:\s*)([ក-ឳ])\.",      # ក. ខ. ...
-        r"(?m)^(?:\s*)([0-9]+)\.",      # 1. 2. ...
-        r"(?m)^(?:\s*)([១-៩]+)\."       # ១. ២. ...
+        (r"(?m)^(\s*)([A-Z])\.", rf'<br>\1<span {highlight_style}>\2.</span>'),       # A. B. ...
+        (r"(?m)^(\s*)([ក-ឳ])\.", rf'<br>\1<span {highlight_style}>\2.</span>'),      # ក. ខ. ...
+        (r"(?m)^(\s*)([0-9]+)\.", rf'<br>\1<span {highlight_style}>\2.</span>'),      # 1. 2. ...
+        (r"(?m)^(\s*)([១-៩]+)\.", rf'<br>\1<span {highlight_style}>\2.</span>')       # ១. ២. ...
     ]
-    for pattern in patterns:
-        text = re.sub(pattern, r"<br>\1.", text)
+    
+    for pattern, replacement in patterns:
+        text = re.sub(pattern, replacement, text)
+        
     return text
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -117,52 +122,52 @@ async def done_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("⏳ សូមរង់ចាំ... កំពុងបង្កើត PDF")
 
     try:
-        # --- START: កែប្រែតក្កវិជ្ជាត្រង់នេះ ---
-        
-        # 1. ប្រមូលគ្រប់អត្ថបទដែលបានផ្ញើ បញ្ចូលទៅក្នុង string តែមួយ ដោយបំបែកបន្ទាត់ដោយ (\n)
         full_text = "\n".join(user_data_store[user_id])
-        
-        # 2. ការពារកូដ HTML ដែលអ្នកប្រើអាចបញ្ចូលដោយចៃដន្យ
         escaped_text = html.escape(full_text)
         
-        # 3. ប្រើ function ដែលមានស្រាប់ ដើម្បីបន្ថែម <br> នៅពីមុខបញ្ជីរាយ (ក., A., 1., ១.)
-        formatted_with_markers = format_text_with_speaker_markers(escaped_text)
+        # ហៅ Function ដែលបានកែប្រែរួច
+        formatted_with_markers = format_text_for_pdf(escaped_text)
         
-        # 4. បំលែងរាល់ការចុះបន្ទាត់ (\n) ទៅជា <br> សម្រាប់ HTML
         html_content = formatted_with_markers.replace('\n', '<br>\n')
-
-        # --- END: កែប្រែតក្កវិជ្ជាត្រង់នេះ ---
-
         final_html = HTML_TEMPLATE.format(content=html_content)
 
-        # PDF generate
         pdf_buffer = BytesIO()
         HTML(string=final_html).write_pdf(pdf_buffer)
         pdf_buffer.seek(0)
 
-        # filename
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"KHMER_PDF_{timestamp}.pdf"
 
-        # send back
         await context.bot.send_document(
             chat_id=update.effective_chat.id,
             document=pdf_buffer,
             filename=filename,
             caption="✅ **សូមអបអរ! PDF រួចរាល់**"
         )
-
-        # clear buffer
         user_data_store[user_id] = []
 
     except Exception as e:
-        await update.message.reply_text(f"❌ មានបញ្ហា: {str(e)}")
+        logger.error(f"Error creating PDF for user {user_id}: {e}", exc_info=True)
+        await update.message.reply_text(f"❌ មានបញ្ហាធ្ងន់ធ្ងរកើតឡើង៖ {str(e)}")
+
+# <--- ការកែប្រែទី៣៖ បន្ថែម Error Handler ដើម្បីការពារ Bot ពីការគាំង (crash)
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Log the error and send a telegram message to notify the developer."""
+    logger.error("Exception while handling an update:", exc_info=context.error)
+    
+    # អ្នកអាចបន្ថែមការส่งข้อความแจ้งเตือนទៅកាន់ ID របស់អ្នកផ្ទាល់នៅត្រង់នេះ
+    # if isinstance(context.error, Exception):
+    #     await context.bot.send_message(chat_id=YOUR_ADMIN_ID, text=f"Bot error: {context.error}")
 
 # Handlers
 app.add_handler(CommandHandler("start", start_command))
 app.add_handler(CommandHandler("done", done_command))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, receive_text))
 
+# បន្ថែម Error handler ទៅក្នុង Application
+app.add_error_handler(error_handler)
+
 if __name__ == "__main__":
-    logging.info("🚀 Bot Running with Speaker Marker Support...")
+    logger.info("🚀 Bot is running with Highlight, Timeout, and Error Handling support...")
+    # Polling ជាមួយ Timeout ដែលបានកំណត់
     app.run_polling()
