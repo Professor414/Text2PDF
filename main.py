@@ -74,15 +74,17 @@ user_data_store = {}
 
 def format_text_with_speaker_markers(text: str) -> str:
     """
-    បន្ថែម <br> (ចុះបន្ទាត់) ពេលជួប Speaker markers
-    ឧ. A. B. ... Z. ឬ ក. ខ. គ. ... អ.
+    បន្ថែម <br> ចុះបន្ទាត់ តែពេល Marker នៅដើមបន្ទាត់ (Line start) ប៉ុណ្ណោះ
+    A. B. ... / ក. ខ. ... / 1. 2. ... / ១. ២. ...
     """
     patterns = [
-        r"(^|\s)([A-Z])\.",   # A. B. ... Z.
-        r"(^|\s)([ក-អ])\."   # ក. ខ. គ. ... អ.
+        r"(?m)^(?:\s*)([A-Z])\.",       # A. B. ...
+        r"(?m)^(?:\s*)([ក-ឳ])\.",      # ក. ខ. ...
+        r"(?m)^(?:\s*)([0-9]+)\.",      # 1. 2. ...
+        r"(?m)^(?:\s*)([១-៩]+)\."       # ១. ២. ...
     ]
     for pattern in patterns:
-        text = re.sub(pattern, r"<br>\2.", text)
+        text = re.sub(pattern, r"<br>\1.", text)
     return text
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
